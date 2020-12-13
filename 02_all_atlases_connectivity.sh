@@ -13,7 +13,7 @@ datadir=/cbica/projects/alpraz_EI/input/CorMats/
 mkdir -p $datadir
 atlasdir=/cbica/projects/alpraz_EI/input/atlases/
 
-for atlas in $(ls $atlasdir/aal116_threshold_0.95.nii.gz); do
+for atlas in $(ls $atlasdir/*_threshold_0.95.nii.gz); do
 	fullname=$(basename $atlas)
 	atlasName=${fullname%_thresh*}
 	while IFS=, read subid sesid other; do
