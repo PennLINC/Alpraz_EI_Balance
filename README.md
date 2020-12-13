@@ -17,12 +17,14 @@ The scripts are numbered according to the order they should run.
 
 2. This script launches a ton of `qsub` jobs that generate connectivity matrices for all the alpraz sessions and for all the atlases. 
 The script uses AFNI's `3dNetCorr` function. For convenience reasons with qsub, the actual call to `3dNetCorr` is in the script `netcor_call.sh`.  
-For replication, you can probably just generate a matrix for one or two subjects using the schaefer400 atlas. For example, you could run the following:
-`atlas=schaefer400x7_aal_threshold_0.95.nii.gz` 
-`file_out=output_name`  
-`input_file=/cbica/projects/alpraz_EI/data/TASK_GSR/xcpengine/sub-012969/ses-001561/task-emotionid/space-MNI152NLin2009cAsym/task/stats/sub-012969_ses-001561_task-emotionid_space-MNI152NLin2009cAsym_res4d.nii.gz`  
+For replication, you can probably just generate a matrix for one or two subjects using the schaefer400 atlas. For example, you could run the following:  
+``` bash
+atlas=schaefer400x7_aal_threshold_0.95.nii.gz
+file_out=output_name
+input_file=/cbica/projects/alpraz_EI/data/TASK_GSR/xcpengine/sub-012969/ses-001561/task-emotionid/space-MNI152NLin2009cAsym/task/stats/sub-012969_ses-001561_task-emotionid_space-MNI152NLin2009cAsym_res4d.nii.gz
 
-`3dNetCorr -in_rois "$atlas" -prefix $file_out -inset $input_file`  
+3dNetCorr -in_rois "$atlas" -prefix $file_out -inset $input_file
+```
 
 Alternatively, you can use your preferred method of generating connectivity matrices and compare outputs. For comparison, the outputs from my script are stored like:
 `/cbica/projects/alpraz_EI/data/TASK_GSR/12969/1561/schaefer400x7_aal_CC_GSR_000.netcc` for the above example subject.  
@@ -35,13 +37,14 @@ Alternatively, you can use your preferred method of generating connectivity matr
 - a classifier with unimodal areas only   
 
 This should be run 3 times with different options each time.  
-First, set `subdivide = FALSE` and `subdivision = "all"`.
-Second, set `subdivide = TRUE` and `subdivision = "transmodal25"`.
-Last, set `subdivide = TRUE` and `subdivision = "unimodal25"`.  
+First, set `subdivide = FALSE` and `subdivision = "all"`.  
+Second, set `subdivide = TRUE` and `subdivision = "transmodal25"`.  
+Last, set `subdivide = TRUE` and `subdivision = "unimodal25"`.    
 More information about this is included in the script comments.  
 
-There is functionality to run permutation tests for each of these, but I have it turned off by default because it takes a while. I don't think the permutations are necessary to replicate. 
-`perm_test="permute_off"` for no permutations.  
+There is functionality to run permutation tests for each of these, but I have it turned off by default because it takes a while. I don't think the permutations are necessary to replicate.  
+`perm_test="permute_off"` for no permutations.   
+
 `perm_test="permute_on"` for permutations.  
 
 5. Finally, this Rmd script takes the output from step `4` and does some analyses.  
@@ -61,8 +64,15 @@ Schaefer400: `/cbica/projects/alpraz_EI/input/CorMats/schaefer400x7_aal_GSR_all.
 Schaefer400 transmodal: `/cbica/projects/alpraz_EI/input/CorMats/schaefer400x7_aal_GSR_transmodal25.rds` (all the connections to transmodal regions).  
 Schaefer400 unimodal: `/cbica/projects/alpraz_EI/input/CorMats/schaefer400x7_aal_GSR_unimodal25.rds` (all the connections to unimodal regions).  
 
-These can be loaded in `R` with `df <- readRDS('/cbica/projects/alpraz_EI/input/CorMats/schaefer400x7_aal_GSR_transmodal25.rds')` for example.  
-(If you prefer to use Matlab, you can just open that file in `R` and then save as a csv with `write.table(df,"output_filename.csv", row.names=F,sep=",")`).  
+These can be loaded in `R` with 
+``` R
+df <- readRDS('/cbica/projects/alpraz_EI/input/CorMats/schaefer400x7_aal_GSR_transmodal25.rds')
+```
+for example.  
+If you prefer to use Matlab, you can just open that file in `R` and then save as a csv with 
+``` R
+write.table(df,"output_filename.csv", row.names=F,sep=",")
+```
 
 The dataframe is one row per observation. The columns are as follows:
 The first 2 are: "subid" (subject ID), "sesid" (the session ID, 2 per subject).  
@@ -89,6 +99,8 @@ The critical model to run is:
 `idemoBehAllEmoNrCount` is the number of skipped responses from the `idemo` task. This is a proxy for alertness of the subject.  
 
 This could be run, for example, as: 
-`model <- gam(Distance ~s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount, data = my_data_frame, subset = exclusions==0)`.  
-`summary(model)`.  
+``` R
+model <- gam(Distance ~s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount, data = my_data_frame, subset = exclusions==0)  
+summary(model)
+```
 Again, see the script to get the exclusions.  
