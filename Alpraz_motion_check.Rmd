@@ -1,0 +1,66 @@
+---
+title: "Alpraz Motion"
+author: "Bart"
+date: "10/12/2020"
+output: html_document
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(sjPlot)
+library(lmerTest)
+```
+
+```{r functions}
+mo_analysis <- function(df){
+  pred_data = df[[1]]$pred_data
+  pred_data <- pred_data%>%left_join(alpraz_info,by=c("subid","sesid"))%>%
+    mutate(model.pred = as.factor(model.pred),drug=as.factor(drug.x))
+
+  mod = lmer(distance~FD+age.at.fmri1+(1|subid),data = pred_data)
+  print(summary(mod))
+  print(plot_model(mod,type = "pred",show.data = T))
+  mod = glmer(model.pred~FD+age.at.fmri1 + (1|subid),data = pred_data,family = "binomial")
+  print(summary(mod))
+  print(plot_model(mod,type = "pred",show.data = T))
+  
+  mod = lmer(FD~drug + (1|subid),data = pred_data)
+  print(summary(mod))
+  print(plot_model(mod,type = "pred",show.data = T))
+  
+}
+
+```
+
+```{r load_data}
+alpraz_info = read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
+alpraz_demo = read.csv('/cbica/projects/alpraz_EI/input/Alpraz_deographics.csv')
+alpraz_info <- alpraz_info %>% left_join(alpraz_demo,by=c("subid"="bblid", "sesid"="fmriid"))
+```
+
+
+```{r analysis}
+# schaef 200
+print("Schaefer 200")
+alpraz_results = readRDS('/cbica/projects/alpraz_EI/output/drug_classification/schaefer200x7_aal_GSR_all_svm_1_permute_off_results.rds')
+mo_analysis(alpraz_results)
+
+# Schaef 400
+print("Schaefer 400")
+alpraz_results = readRDS('/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_GSR_all_svm_1_permute_off_results.rds')
+mo_analysis(alpraz_results)
+
+# transmodality
+alpraz_results <- readRDS("/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_GSR_transmodal25_svm_1_permute_off_results.rds")
+mo_analysis(alpraz_results)
+
+alpraz_results <- readRDS("/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_GSR_unimodal25_svm_1_permute_off_results.rds")
+mo_analysis(alpraz_results)
+
+
+alpraz_long <- pivot_longer(alpraz_info,cols = "FD",names_to = "drug")
+alpraz_long$drug_session = alpraz_long$drug..7
+ggplot(alpraz_long%>%filter(motion_pass==1),aes(x = value,fill=drug_session))+geom_density(alpha=.5,position = "dodge")
+
+```

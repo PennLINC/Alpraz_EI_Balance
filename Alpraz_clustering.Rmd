@@ -1,0 +1,196 @@
+---
+title: "AlprazClustering"
+author: "Bart"
+date: "11/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# based on https://uc-r.github.io/hc_clustering
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering visualization
+library(dendextend) # for comparing two dendrograms
+source('/cbica/projects/alpraz_EI/scripts/Alpraz_viz_functions.R')
+
+```
+
+```{r set_vars}
+atlasname <- "schaefer400x7_aal" # set atlas
+results=readRDS(
+  sprintf(
+  "/cbica/projects/alpraz_EI/output/drug_classification/%s_GSR_svm_1_results.rds",
+  atlasname) # load data
+)
+W=results[[2]] #Pull out feature weight vector
+
+#Turn the feature vector into a matrix
+feat_mat_obj <- feat2mat(W,atlasname,community_summary = F,GABA=F,transmodality = F)
+```
+
+# Determine which clustering method we should use
+```{r clustering}
+df_orig<- as.data.frame(feat_mat_obj)
+df <- scale(df_orig) #zscore
+d<-dist(df) #distance
+
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+ac <- function(x) {
+  agnes(df, method = x)$ac
+}
+
+#AGNES
+print(map_dbl(m, ac)) #ward is best
+d <- diana(df,stand = F)
+#DIANA
+print(d$dc)
+```
+
+## Cluster data with best performing method (AGNES, Ward)
+```{r ward,fig.height=10,fig.width=10}
+hc <- agnes(df, method = "ward")
+pltree(hc, cex = 0.3, hang = -1, main = "Dendrogram of Ward Clustering")# Too hard to seee much
+
+```
+
+### Determine optimal number of hard clusters
+There doesn't seem to be a clear elbow...  
+Silhouette method prefers 3.  
+
+```{r clust_number}
+fviz_nbclust(df, FUN = hcut, method = "wss",k.max = 20)
+fviz_nbclust(df, FUN = kmeans, method = "wss",k.max = 20)
+fviz_nbclust(df, FUN = hcut, method = "silhouette",k.max = 20)
+fviz_nbclust(df, FUN = kmeans, method = "silhouette",k.max = 20)
+gap_stat <- clusGap(df, FUN = hcut, K.max = 20, B = 100)
+fviz_gap_stat(gap_stat)
+
+```
+
+### Cut into three groups
+```{r group_cut3,fig.width=10,fig.height=10,warning=FALSE}
+hc_a <- agnes(df, method = "ward")
+clust_group  <- cutree(as.hclust(hc_a), k = 3)
+hc_a2 <- hcut(df,hc_func = "agnes",hc_method = "ward.D2",k=3)
+fviz_dend(hc_a2,cex = .5)
+for (i in unique(clust_group)) {
+  cat(paste0("\ncluster ",i,"\n"))
+  print(names(clust_group[clust_group==i]))
+}
+
+
+df_clust <- df_orig %>%
+  mutate(cluster3 = clust_group)
+df_clust$node_names <- rownames(df_orig)
+# df_clust$node_names <- paste(rownames(df_orig),df_clust$cluster3,sep = "_")
+df_clust <- df_clust %>%
+  select(cluster3,node_names)
+
+# Plot clusters
+fviz_cluster(list(data = df, cluster = clust_group)) # blobby plot
+
+# Summarize weights by cluster
+summary_df <- data.frame(rvals = rowSums(abs(df_orig)))
+summary_df$node_names = rownames(summary_df)
+summary_df <- summary_df %>%
+  left_join(df_clust,by="node_names")%>%
+  group_by(cluster3)%>%
+  summarize(MeanW = mean(rvals))
+s_plot <- ggplot(summary_df,aes(x=factor(cluster3),y=MeanW,fill=factor(cluster3)))+geom_col()
+print(s_plot)
+
+#Generate the feature matrix ordered by cluster
+df_ordered <- df_orig[order(df_clust$cluster3),order(df_clust$cluster3)]
+g <- expand.grid(x=rownames(df_ordered),y=colnames(df_ordered))
+g$vals = c(as.matrix(df_ordered))
+g$x<-ordered(g$x,levels=colnames(df_ordered))
+g$y<-ordered(g$y,levels=colnames(df_ordered))
+grev<-g%>%map_df(rev)
+cluster_df <- grev %>%
+  left_join(df_clust,by = c("x"= "node_names")) %>%
+  left_join(df_clust,by = c("y"= "node_names"),suffix=c("_x","_y"))%>%
+  mutate_at(vars(contains("cluster3")),ordered)
+
+# Weight matrix
+matplot <- ggplot(data=grev,
+                  aes(x=x,
+                      y=ordered(y,levels=rev(levels(y))),
+                      fill=vals))+ 
+  geom_tile(show.legend = T) +
+  scale_fill_gradient2(low = "blue",high = "red",mid="white",midpoint = 0) + labs(fill = "W") +
+  theme(axis.text.x = element_text(angle = 90,hjust = 0),axis.title = element_blank(),legend.position = "bottom",axis.text = element_text(size = 5),plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+  scale_x_discrete(position = "top")  + ggtitle(atlasname)
+
+df_clust$node_names<-ordered(df_clust$node_names,levels=rev(colnames(df_ordered)))
+df_clust$y=1
+df_clust$cluster3 <- as.character(df_clust$cluster3)
+p<- ggplot(data = df_clust,aes(x=node_names,y=y,color=cluster3,fill=cluster3))+geom_col()+coord_flip()+
+  theme(axis.title = element_blank(),axis.text = element_blank(),axis.line = element_blank(),axis.ticks = element_blank())
+
+cowplot::plot_grid(plotlist = list(matplot,p),align = "hv",axis = "bt",rel_widths = c(1,.25))
+```
+
+
+### Cut into 18 groups
+```{r group_cut8,fig.width=10,fig.height=10,warning=FALSE}
+hc_a <- agnes(df, method = "ward")
+clust_group  <- cutree(as.hclust(hc_a), k = 18)
+hc_a2 <- hcut(df,hc_func = "agnes",hc_method = "ward.D2",k=18)
+fviz_dend(hc_a2,cex = .5)
+for (i in unique(clust_group)) {
+  cat(paste0("\ncluster ",i,"\n"))
+  print(names(clust_group[clust_group==i]))
+}
+
+df_clust <- df_orig %>%
+  mutate(cluster3 = clust_group)
+df_clust$node_names <- rownames(df_orig)
+# df_clust$node_names <- paste(rownames(df_orig),df_clust$cluster3,sep = "_")
+df_clust <- df_clust %>%
+  select(cluster3,node_names)
+
+#plot clusters
+fviz_cluster(list(data = df, cluster = clust_group)) # blobby plot
+
+# Summarize weights by cluster
+summary_df <- data.frame(rvals = rowSums(abs(df_orig)))
+summary_df$node_names = rownames(summary_df)
+summary_df <- summary_df %>%
+  left_join(df_clust,by="node_names")%>%
+  group_by(cluster3)%>%
+  summarize(MeanW = mean(rvals))
+s_plot <- ggplot(summary_df,aes(x=factor(cluster3),y=MeanW,fill=factor(cluster3)))+geom_col()
+print(s_plot)
+
+#Generate the feature matrix ordered by cluster
+df_ordered <- df_orig[order(df_clust$cluster3),order(df_clust$cluster3)]
+g <- expand.grid(x=rownames(df_ordered),y=colnames(df_ordered))
+g$vals = c(as.matrix(df_ordered))
+g$x<-ordered(g$x,levels=colnames(df_ordered))
+g$y<-ordered(g$y,levels=colnames(df_ordered))
+grev<-g%>%map_df(rev)
+cluster_df <- grev %>%
+  left_join(df_clust,by = c("x"= "node_names")) %>%
+  left_join(df_clust,by = c("y"= "node_names"),suffix=c("_x","_y"))%>%
+  mutate_at(vars(contains("cluster3")),ordered)
+
+# Weight matrix
+matplot <- ggplot(data=grev,
+                  aes(x=x,
+                      y=ordered(y,levels=rev(levels(y))),
+                      fill=vals))+ 
+  geom_tile(show.legend = T) +
+  scale_fill_gradient2(low = "blue",high = "red",mid="white",midpoint = 0) + labs(fill = "W") +
+  theme(axis.text.x = element_text(angle = 90,hjust = 0),axis.title = element_blank(),legend.position = "bottom",axis.text = element_text(size = 5),plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+  scale_x_discrete(position = "top")  + ggtitle(atlasname)
+
+df_clust$node_names<-ordered(df_clust$node_names,levels=rev(colnames(df_ordered)))
+df_clust$y=1
+df_clust$cluster3 <- as.character(df_clust$cluster3)
+p<- ggplot(data = df_clust,aes(x=node_names,y=y,color=cluster3,fill=cluster3))+geom_col()+coord_flip()+
+  theme(axis.title = element_blank(),axis.text = element_blank(),axis.line = element_blank(),axis.ticks = element_blank())
+
+cowplot::plot_grid(plotlist = list(matplot,p),align = "hv",axis = "bt",rel_widths = c(1,.25))
+```

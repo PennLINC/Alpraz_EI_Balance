@@ -1,0 +1,790 @@
+---
+title: "Alpraz t-tests"
+author: "Bart"
+date: "11/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+## Load Libraries
+require(ggplot2)
+library(cowplot)
+require(dplyr)
+library(tidyverse)
+library(matrixTests)
+library(mgcv)
+library(gratia)
+source("Alpraz_viz_functions.R")
+theme_set(theme_classic())
+setwd("/cbica/projects/alpraz_EI/scripts/")
+```
+
+```{r set_functions, echo=FALSE}
+extract_matrix2 <- function(subid,sesid,atlasname,gsr,subdivide=F, subdivision=NULL){
+  if (gsr == "GSR") {
+    fname <- sprintf("/cbica/projects/alpraz_EI/data/TASK_GSR/%s/%s/%s_CC_GSR_000.netcc",subid,sesid,atlasname)
+  } else if (gsr == "rest_GSR") {
+    fname <- sprintf("/cbica/projects/alpraz_EI/data/NO_TASK_REGRESS_GSR/%s/%s/%s_CC_rest_GSR_000.netcc",subid,sesid,atlasname)
+  } else if (gsr == "rest_noGSR") {
+    fname <- sprintf("/cbica/projects/alpraz_EI/data/NO_TASK_REGRESS/%s/%s/%s_CC_rest_noGSR_000.netcc",subid,sesid,atlasname)
+  } else if (gsr == "PNC") {
+    fname <- sprintf("/cbica/projects/alpraz_EI/data/PNC/IDEMO_ACOMPCOR_GSR/%s/%s/%s_CC_000.netcc",subid,sesid,atlasname)
+  }else {
+    fname <- sprintf("/cbica/projects/alpraz_EI/data/TASK/%s/%s/%s_CC_noGSR_000.netcc",subid,sesid,atlasname)
+  }
+  print(fname)
+  thisCC <- as.matrix(read.table(fname,header = T,skip = 4))
+  # thisCC_vector = as.vector(thisCC)
+  
+  # Select specific features if desired.
+  if (subdivide==T) {
+    templateCC <- thisCC
+    
+    # Get labels
+    labels <- read.csv(sprintf('/cbica/projects/alpraz_EI/input/atlases/%s_labels.csv',atlasname),header=F)
+    if (atlasname %in% c("schaefer400x7_aal","schaefer200x7_aal")) {
+      community_labels <- read.csv(sprintf('/cbica/projects/alpraz_EI/input/atlases/%s_node_labels.csv',
+                                           gsub(x = atlasname,pattern = "_aal",replacement = ""))
+                                   ,header=T)
+      if (atlasname == "schaefer200x7_aal") {
+        trans_labels <- read.csv('/cbica/projects/alpraz_EI/input/atlases/Schaef200_transmodality7.csv',header = F)
+      } else{
+        trans_labels <- read.csv('/cbica/projects/alpraz_EI/input/atlases/Schaef400_transmodality7.csv',header = F)
+      }
+
+      colnames(trans_labels) <- c('name','transmodality')
+      trans_labels$name <- gsub(trans_labels$name,pattern = "7Networks_",replacement = "")
+      trans_labels$nums = as.numeric(rownames(trans_labels))
+
+      
+      mat_labels <- data.frame(nums = colnames(templateCC))
+      mat_labels$nums <- as.numeric(gsub(mat_labels$nums,pattern="X",replace=""))
+      mat_labels <- mat_labels %>% left_join(labels,by = c("nums"="V1"))
+      mat_labels <- mat_labels %>% left_join(community_labels,by = c("nums"="index"))
+      mat_labels <- mat_labels %>%
+        mutate(community_name = as.character(community_name),V2 = as.character(V2),node_names=as.character(node_names))
+      mat_labels$community_name[is.na(mat_labels$community_name)]="AAL_subcortex"
+      mat_labels$node_names[is.na(mat_labels$node_names)]= mat_labels$V2[is.na(mat_labels$node_names)]
+      
+      # Check if we are using transmodality scores
+      if (subdivision %in% c("transmodal","unimodal","transmodal25","unimodal25")) {
+        #add transmodality scores
+        # mat_labels <- mat_labels %>%
+        #   left_join(trans_labels,by = c("node_names"="name"))
+        mat_labels <- mat_labels %>%
+          left_join(trans_labels,by = "nums")
+        
+        #cut transmodality into quantiles
+        if (grepl(x=subdivision,pattern = "25")) {
+          cuts <- quantile(mat_labels$transmodality,c(0,1/4,3/4,1),na.rm = T)
+        } else{
+          cuts <- quantile(mat_labels$transmodality,c(0,1/3,2/3,1),na.rm = T)
+        }
+        mat_labels <- mat_labels %>% 
+          mutate(trans_category=cut(transmodality, breaks=cuts, labels=c("unimodal","middle","transmodal"),include.lowest = T))
+        # Set names to transmodality names
+
+        colnames(thisCC)=mat_labels$trans_category
+        rownames(thisCC)=mat_labels$trans_category
+        
+        
+        if (grepl(x=subdivision,pattern = "transmodal")) {
+          communities="transmodal"
+          commCC <- thisCC[rownames(thisCC) %in% communities,]
+          vals <- as.vector(commCC)
+        } else if (grepl(x=subdivision,pattern = "unimodal")) {
+          communities="unimodal"
+          commCC <- thisCC[rownames(thisCC) %in% communities,]
+          vals <- as.vector(commCC)
+          length(vals)
+        } 
+      } else if (subdivision=="regional"){
+        longCC <- as.data.frame(thisCC)%>%
+          mutate(row_label = colnames(thisCC))%>% 
+          pivot_longer(cols = contains("X"))
+        longCC$subid = subid
+        longCC$sesid = sesid
+        vals=longCC
+        
+      } else {
+        # Set names to community names
+        colnames(thisCC)=mat_labels$community_name
+        rownames(thisCC)=mat_labels$community_name
+        if (subdivision=="association") {
+          communities=c("default","frontoparietalControl")  #"salienceVentralAttention",
+          commCC <- thisCC[rownames(thisCC) %in% communities,]
+          vals <- as.vector(commCC)
+          } else if (subdivision=="sensorimotor") {
+            communities=c("visual","somatomotor")
+            commCC <- thisCC[rownames(thisCC) %in% communities,]
+            vals <- as.vector(commCC)
+            length(vals)
+          } else if (subdivision=="association_plus") {
+            communities=c("default","frontoparietalControl","dorsalAttention")
+            commCC <- thisCC[rownames(thisCC) %in% communities,]
+            vals <- as.vector(commCC)
+            length(vals)
+          }
+      } 
+    }
+  } 
+  else{
+      thisCC_vector = thisCC[upper.tri(thisCC,diag = F)]
+      vals <-thisCC_vector
+  }
+  return(vals)
+}
+
+feat_ttest <- function(W,atlasname,gsr="GSR",community_summary = F,plots = T,templateCC = NULL,returnRankingsOnly = F,GABA=T,transmodality=T){
+  if (is.null(templateCC)) {
+    if (gsr=="GSR") {
+      fname <- sprintf("/cbica/projects/alpraz_EI/data/TASK_GSR/13783/1986/%s_CC_GSR_000.netcc",atlasname)
+    } else {
+      fname <- sprintf("/cbica/projects/alpraz_EI/data/TASK/13783/1986/%s_CC_noGSR_000.netcc",atlasname)
+    }
+    
+    templateCC <- as.matrix(read.table(fname,header = T,skip = 4))
+  }
+  
+  #load template matrix (picked 13783 1986 at random)
+  
+  templateCC_vector = templateCC[upper.tri(templateCC,diag = F)]
+  if (length(templateCC_vector == length(W))) {
+    templateCC_vector = W
+  } else {
+    stop("Length of W does not match the supplied atlas")
+  }
+  newCC <- templateCC
+  newCC[upper.tri(newCC,diag = T)] = 0
+  newCC[upper.tri(newCC,diag = F)] = templateCC_vector
+  newCC[lower.tri(newCC)] <- t(newCC)[lower.tri(newCC)]
+  
+ 
+  # Get labels
+  
+  labels <- read.csv(sprintf('/cbica/projects/alpraz_EI/input/atlases/%s_labels.csv',atlasname),header=F)
+  if (atlasname %in% c("schaefer400x7_aal","schaefer200x7_aal","gordon333_aal","glasser360_aal")) {
+    community_labels <- read.csv(sprintf('/cbica/projects/alpraz_EI/input/atlases/%s_node_labels.csv',
+                                         gsub(x = atlasname,pattern = "_aal",replacement = ""))
+                                 ,header=T)
+    
+    mat_labels <- data.frame(nums = colnames(templateCC))
+    mat_labels$nums <- as.numeric(gsub(mat_labels$nums,pattern="X",replace=""))
+    mat_labels <- mat_labels %>% left_join(labels,by = c("nums"="V1"))
+    mat_labels <- mat_labels %>% left_join(community_labels,by = c("nums"="index"))
+    mat_labels <- mat_labels %>%
+      mutate(community_name = as.character(community_name),V2 = as.character(V2),node_names=as.character(node_names))
+    mat_labels$community_name[is.na(mat_labels$community_name)]="AAL_subcortex"
+    mat_labels$node_names[is.na(mat_labels$node_names)]= mat_labels$V2[is.na(mat_labels$node_names)]
+    
+    # Set names to node names
+    colnames(newCC)=mat_labels$node_names
+    rownames(newCC)=mat_labels$node_names
+    
+    # Arrange by community membership
+    orderCC <- newCC[order(mat_labels$node_community),order(mat_labels$node_community)]
+    newCC <- orderCC
+    
+    if (community_summary == T) {
+      commCC <- newCC
+      df_CC <- as.data.frame(commCC)
+      rvals <- rowSums(commCC) #row sum of t-statistic
+      rvals_abs <- rowSums(abs(commCC)) #row sum of t-statistic
+      rval_df <- data.frame(rvals = rvals,rvals_abs = rvals_abs,names = as.character(names(rvals)))
+      rval_df <- rval_df %>% 
+        left_join(mat_labels,by = c("names" = "node_names"))
+      
+      # Table
+      sdf <- rval_df %>% group_by(community_name) %>% summarize(m = mean(rvals)) %>% arrange(-m)
+      
+      # Summary bar plot
+      if (plots == T) {
+        print(knitr::kable(sdf, caption = "Mean nodal sum(W) per community", floating.environment="sidewaystable"))
+        community_plot <- ggplot(data = sdf, 
+                                 aes(x = reorder(community_name,-m), y = m, color = community_name,fill = community_name)) + 
+          geom_col(show.legend = F) + 
+          scale_fill_brewer(type = "qual",palette = "Dark2") + 
+          scale_color_brewer(type = "qual",palette = "Dark2") +
+          ylab("Mean abs(t-stat)") + 
+          xlab('community')
+        print(community_plot)
+        
+        p <- ggplot(data = rval_df,
+                    aes(y=rvals,
+                        x=ordered(names,levels=rev(names)),
+                        fill = community_name,
+                        color = community_name)
+        ) + 
+          geom_bar(stat="identity",show.legend = F) + ylab("Mean absolute t-stat") + 
+          scale_fill_brewer(type = "qual",palette = "Dark2") + scale_color_brewer(type = "qual",palette = "Dark2") +
+          theme(
+            axis.text.y = element_blank(),
+            axis.title.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.line.y = element_blank(),
+            plot.margin = unit(c(0, 0, 0, 0), "cm"),
+            axis.text.x = element_text(angle = 90,hjust=1)) + 
+          coord_flip() 
+        
+        # matrix plot
+        g <- expand.grid(x=rownames(commCC),y=colnames(commCC))
+        g$vals = c(commCC)
+        g$x<-ordered(g$x,levels=colnames(commCC))
+        g$y<-ordered(g$y,levels=colnames(commCC))
+        grev<-g%>%map_df(rev)
+        # Weight matrix
+        matplot <- ggplot(data=grev,
+                          aes(x=x,
+                              y=ordered(y,levels=rev(levels(y))),
+                              fill=vals))+ 
+          geom_tile(show.legend = T) +
+          scale_fill_gradient2(low = "blue",high = "red",mid="white",midpoint = 0) + 
+          labs(fill = "t-stat") +
+          theme(axis.text.x = element_text(angle = 90,hjust = 0),
+                axis.title = element_blank(),
+                legend.position = "bottom",
+                axis.text = element_text(size = 5),
+                plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+          scale_x_discrete(position = "top")  + 
+          ggtitle(atlasname)
+        
+        
+        comboplot_top<-cowplot::plot_grid(plotlist = list(matplot,p),align = "hv",axis = "bt",rel_widths = c(1,.25))
+        comboplot<-cowplot::plot_grid(comboplot_top,community_plot,ncol = 1,rel_heights = c(1,.5))
+        # print(comboplot)
+        cowplot::save_plot(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_tstat_matrix.png",atlasname,gsr), 
+                           comboplot, base_height = 14, base_width = 10)
+        
+        if (GABA == T) {
+          GABA_vals <- read.table(sprintf(
+            '/cbica/projects/alpraz_EI/input/atlases/GABRA1/GABRA1_%s_threshold_0.95_vals.csv',atlasname),
+            header = T)
+          GABA_mat_labels <- rval_df %>% left_join(GABA_vals,by = c("nums"="label"))
+          
+          GABA_plot <- region_plots(df = GABA_mat_labels,var_name = "rvals",xlabel = "GABRA1")
+          print(GABA_plot)
+          # r=cor.test(GABA_mat_labels$rvals,GABA_mat_labels$value,method = "pearson")
+          # GABA_plot <- ggplot(data = GABA_mat_labels,aes(x=value,y=rvals,color=community_name)) + geom_point() +xlab("GABRA1") +
+          #   ylab("mean abs(t-stat)")+geom_smooth(method = "lm")
+          # print(GABA_plot)
+          # 
+          # cortex = GABA_mat_labels %>% filter(!(community_name%in%c("AAL_subcortex")))
+          # r=cor.test(cortex$rvals,cortex$value,method = "pearson")
+          # GABA_cortical_plot <- ggplot(data = cortex,aes(x=value,y=rvals,color=community_name)) +
+          #   geom_point() +xlab("GABRA1") +
+          #   ylab("mean t-stat")+geom_smooth(method = "lm")+
+          #   annotate(y=mean(cortex$rvals),x=mean(cortex$value),geom = "text",label=sprintf("r = %1.2f, p = %1.3f",r$estimate,r$p.value))+
+          #   ggtitle("GABRA1 cortical t-stat")+theme(legend.position = "none")
+          # # print(GABA_cortical_plot)
+          # r=cor.test(cortex$rvals_abs,cortex$value,method = "pearson")
+          # GABA_cortical_plot_abs <- ggplot(data = cortex,aes(x=value,y=rvals_abs,color=community_name)) +
+          #   geom_point() +xlab("GABRA1") +
+          #   ylab("mean t-stat")+geom_smooth(method = "lm")+
+          #   annotate(y=mean(cortex$rvals_abs),x=mean(cortex$value),geom = "text",label=sprintf("r = %1.2f, p = %1.3f",r$estimate,r$p.value))+
+          #   ggtitle("GABRA1 cortical absolute t-stat")+theme(legend.position = "bottom",legend.title = element_blank())
+          # GABA_plots <- cowplot::plot_grid(GABA_cortical_plot,GABA_cortical_plot_abs,nrow=1,align = "hv",axis = "tb")
+          # print(GABA_plots)
+          
+          bzrvals <- read.table(sprintf(
+            '/cbica/projects/alpraz_EI/input/atlases/bzr_atlas/bzr_%s_threshold_0.95_vals.csv',atlasname),
+            header = T)
+          bzr_mat_labels <- rval_df %>% left_join(bzrvals,by = c("nums"="label"))
+          
+          bzr_plot <- region_plots(df = bzr_mat_labels,var_name = "rvals",xlabel = "BenzoR")
+          print(bzr_plot)
+          # # signed
+          # r=cor.test(bzr_mat_labels$rvals,bzr_mat_labels$value,method = "pearson")
+          # bzr_plot <- ggplot(data = bzr_mat_labels,aes(x=value,y=rvals,color=community_name)) + geom_point() +xlab("BZR") + ylab("W sum") +geom_smooth(method = "lm")+
+          #   annotate(x=mean(bzr_mat_labels$value),y=mean(bzr_mat_labels$rvals),geom = "text",label=sprintf("r = %1.2f,p = %1.3f",r$estimate,r$p.value))+
+          #   ggtitle("Region t-stat by benzo receptor")+theme(legend.position = "bottom",legend.title = element_blank())
+          # # print(bzr_plot)
+          # # absolute
+          # r=cor.test(bzr_mat_labels$rvals_abs,bzr_mat_labels$value,method = "pearson")
+          # bzr_plot_abs <- ggplot(data = bzr_mat_labels,aes(x=value,y=rvals_abs,color=community_name)) + 
+          #   geom_point() +xlab("BZR") + ylab("W sum") +geom_smooth(method = "lm")+
+          #   annotate(x=mean(bzr_mat_labels$value),y=mean(bzr_mat_labels$rvals_abs),geom = "text",label=sprintf("r = %1.2f,p = %1.3f",r$estimate,r$p.value))+
+          #   ggtitle("Abslute t-stat by benzo receptor")+theme(legend.position = "none")
+          # # print(bzr_plot_abs)
+          # bzr_plots <- cowplot::plot_grid(bzr_plot,bzr_plot_abs,nrow=1,align = "hv",axis = "tb")
+          # print(bzr_plots)
+          
+          g <- g %>% left_join(bzr_mat_labels%>% select(names,value),by = c("x"="names"))
+          g <- g %>% left_join(bzr_mat_labels%>% select(names,value),by = c("y"="names"),suffix = c("x","y"))
+          
+          gmoda <- gam(vals ~ s(valuex,valuey,k=4),data=g)
+          print(summary(gmoda))
+          gpa <- gratia::draw(gmoda)
+          title <- ggdraw() +
+            draw_label(
+              "BZR W symmetric",
+              fontface = 'bold',
+              x = 0,
+              hjust = 0
+            ) 
+          gpta<- cowplot::plot_grid(title,gpa,ncol=1,rel_heights = c(.1,1))
+          print(gpta)
+          
+          # get the upper triangle
+          triCC <- commCC
+          triCC[upper.tri(commCC,diag = T)]=NA
+          g$vals = c(triCC)
+          
+          g_half = g[!is.na(g$vals),]
+          gmod <- gam(vals ~ s(valuex,valuey,k=4),data=g_half)
+          print(summary(gmod))
+          gp <- gratia::draw(gmod)
+          title <- ggdraw() +
+            draw_label(
+              "BZR upper triangle W",
+              fontface = 'bold',
+              x = 0,
+              hjust = 0
+            ) 
+          gpt<- cowplot::plot_grid(title,gp,ncol=1,rel_heights = c(.1,1))
+          print(gpt)
+          
+          lmod<-lm(vals ~ valuex*valuey,data = g_half)
+          print(sjPlot::plot_model(lmod,type = "int",show.data = T))
+        }
+        
+        if (transmodality == T){
+          if (atlasname == "schaefer200x7_aal") {
+            trans_labels <- read.csv('/cbica/projects/alpraz_EI/input/atlases/Schaef200_transmodality7.csv',header = F)
+          } else{
+            trans_labels <- read.csv('/cbica/projects/alpraz_EI/input/atlases/Schaef400_transmodality7.csv',header = F)
+          }
+          
+          colnames(trans_labels) <- c('name','transmodality')
+          trans_labels$name <- gsub(trans_labels$name,pattern = "7Networks_",replacement = "")
+          trans_labels$nums = as.numeric(rownames(trans_labels))
+          
+          mat_labels <- mat_labels %>%
+            left_join(trans_labels,by = "nums")
+          
+          rval_df_trans <- rval_df %>%
+            left_join(mat_labels,by = c("names" = "node_names"))
+          
+          colnames(newCC)=mat_labels$node_names
+          rownames(newCC)=mat_labels$node_names
+          # Arrange by community membership
+          orderCC <- newCC[order(mat_labels$transmodality),order(mat_labels$transmodality)]
+          newCC <- orderCC
+          
+          # matrix plot
+          g <- expand.grid(x=rownames(newCC),y=colnames(newCC))
+          g$vals = c(newCC)
+          g$x<-ordered(g$x,levels=colnames(commCC)[order(mat_labels$transmodality)])
+          g$y<-ordered(g$y,levels=colnames(commCC)[order(mat_labels$transmodality)])
+          grev<-g%>%map_df(rev)
+          # Weight matrix
+          matplot <- ggplot(data=grev,
+                            aes(x=x,
+                                y=ordered(y,levels=rev(levels(y))),
+                                fill=vals))+ 
+            geom_tile(show.legend = T) +
+            scale_fill_gradient2(low = "blue",high = "red",mid = "white",midpoint = 0) + 
+            labs(fill = "t-stat") +
+            theme(axis.text.x = element_text(angle = 90,hjust = 0),
+                  axis.title = element_blank(),
+                  legend.position = "bottom",
+                  axis.text = element_text(size = 5),
+                  plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+            scale_x_discrete(position = "top")  + 
+            ggtitle(paste0('transmodality ',atlasname))
+          
+          r = cor.test(rval_df_trans$transmodality,rval_df_trans$rvals)
+          dotplot <- ggplot(data=rval_df_trans,
+                            aes(x=transmodality,
+                                y=rvals,
+                                color = community_name.x)) +
+            geom_point()+
+            annotate(x=mean(rval_df_trans$transmodality,na.rm=T),y=mean(rval_df_trans$rvals),geom = "text",label=sprintf("r = %1.2f,p = %1.3f",r$estimate,r$p.value))+
+            ggtitle("Region sum t-stat by transmodality")+theme(legend.position = "none")
+          # print(dotplot)
+          #absolute value
+          r = cor.test(rval_df_trans$transmodality,rval_df_trans$rvals_abs)
+          dotplot_abs <- ggplot(data=rval_df_trans,
+                            aes(x=transmodality,
+                                y=rvals_abs,
+                                color = community_name.x)) +
+            geom_point()+
+            annotate(x=mean(rval_df_trans$transmodality,na.rm=T),y=mean(rval_df_trans$rvals_abs),geom = "text",label=sprintf("r = %1.2f,p = %1.3f",r$estimate,r$p.value))+
+            ggtitle("Region sum absolute t-stat by transmodality")+theme(legend.position = "bottom",legend.title = element_blank(),legend.background = element_blank())
+          dotplots <- cowplot::plot_grid(dotplot,dotplot_abs,ncow = 1,align = "h",axis = "lr")
+          print(dotplots)
+          
+          
+          g <- g %>% left_join(mat_labels%>% select(node_names,transmodality),by = c("x"="node_names"))
+          g <- g %>% left_join(mat_labels%>% select(node_names,transmodality),by = c("y"="node_names"),suffix = c("x","y"))
+
+          gmoda <- gam(vals ~ s(transmodalityx,transmodalityy,k=4),data=g)
+          print(summary(gmoda))
+          gpa <- gratia::draw(gmoda)
+          title <- ggdraw() +
+            draw_label(
+              "transmodality W symmetric",
+              fontface = 'bold',
+              x = 0,
+              hjust = 0
+            ) 
+          gpta<- cowplot::plot_grid(title,gpa,ncol=1,rel_heights = c(.1,1))
+          print(gpta)
+          # get the upper triangle
+          triCC <- newCC
+          triCC[upper.tri(newCC,diag = T)]=NA
+          g$vals = c(triCC)
+          
+          g_half = g[!is.na(g$vals),]
+          gmod <- gam(vals ~ s(transmodalityx,transmodalityy,k=4),data=g_half)
+          print(summary(gmod))
+          gp <- gratia::draw(gmod)
+          title <- ggdraw() +
+            draw_label(
+              "transmodality W",
+              fontface = 'bold',
+              x = 0,
+              hjust = 0
+            ) 
+          gpt<- cowplot::plot_grid(title,gp,ncol=1,rel_heights = c(.1,1))
+          print(gpt)
+          gmod <- gam(abs(vals) ~ s(transmodalityx,transmodalityy,k=4),data=g_half)
+          print(summary(gmod))
+          gp <- gratia::draw(gmod)
+          title <- ggdraw() +
+            draw_label(
+              "transmodality absolute W",
+              fontface = 'bold',
+              x = 0,
+              hjust = 0
+            ) 
+          gpt<- cowplot::plot_grid(title,gp,ncol=1,rel_heights = c(.1,1))
+          print(gpt)
+          
+          lmod<-lm(vals ~ transmodalityx*transmodalityy,data = g_half)
+          print(sjPlot::plot_model(lmod,type = "int",show.data = T))
+          
+          comboplot<-cowplot::plot_grid(plotlist = list(matplot,dotplot),ncol=1,align = "hv",axis = "lr",rel_heights = c(1,.66))
+          ggdraw(comboplot)
+          # print(comboplot)
+          cowplot::save_plot(
+            sprintf("/cbica/projects/alpraz_EI/output/drug_classification/transmodality_%s_%s_tstat_matrix.png",
+                                     atlasname,gsr), 
+                             comboplot, base_height = 12, base_width = 8)
+        }
+        
+        return_obj <- list(feat_mat = newCC,community_ranks = sdf)
+      } else {
+        if (returnRankingsOnly == T) {
+          return_obj <- sdf
+        } else {
+          return_obj <- list(feat_mat = newCC,community_ranks = sdf)
+        }
+      }
+    }
+    
+  } else {
+    mat_labels <- data.frame(nums = colnames(templateCC))
+    mat_labels$nums <- as.numeric(gsub(mat_labels$nums,pattern="X",replace=""))
+    mat_labels <- mat_labels %>% left_join(labels,by = c("nums"="V1"))
+    colnames(newCC)=mat_labels$V2
+    rownames(newCC)=mat_labels$V2
+    return_obj <- list(feat_mat = newCC)
+  }
+  
+  return(return_obj)
+}
+
+pca_mats <- function(pca_loadings,atlasname,gsr="GSR",community_summary = T,plots = T,templateCC = NULL,returnRankingsOnly = F,GABA=T,transmodality=T,k){
+  if (is.null(templateCC)) {
+    if (gsr=="GSR") {
+      fname <- sprintf("/cbica/projects/alpraz_EI/data/TASK_GSR/13783/1986/%s_CC_GSR_000.netcc",atlasname)
+    } else {
+      fname <- sprintf("/cbica/projects/alpraz_EI/data/TASK/13783/1986/%s_CC_noGSR_000.netcc",atlasname)
+    }
+    
+    templateCC <- as.matrix(read.table(fname,header = T,skip = 4))
+  }
+  
+  #load template matrix (picked 13783 1986 at random)
+  
+  plot_list <- vector(mode = "list", length = k)
+  
+  templateCC_vector = templateCC[upper.tri(templateCC,diag = F)]
+  if (length(templateCC_vector == length(pca_loadings))) {
+    templateCC_vector = pca_loadings[,1]
+  } else {
+    stop("Length of pca_loadings does not match the supplied atlas")
+  }
+  newCC <- templateCC
+  
+  # Get labels
+  labels <- read.csv(sprintf('/cbica/projects/alpraz_EI/input/atlases/%s_labels.csv',atlasname),header=F)
+
+  if (atlasname %in% c("schaefer400x7_aal","schaefer200x7_aal","gordon333_aal","glasser360_aal")) {
+    community_labels <- read.csv(sprintf('/cbica/projects/alpraz_EI/input/atlases/%s_node_labels.csv',
+                                         gsub(x = atlasname,pattern = "_aal",replacement = ""))
+                                 ,header=T)
+    
+    mat_labels <- data.frame(nums = colnames(templateCC))
+    mat_labels$nums <- as.numeric(gsub(mat_labels$nums,pattern="X",replace=""))
+    mat_labels <- mat_labels %>% left_join(labels,by = c("nums"="V1"))
+    mat_labels <- mat_labels %>% left_join(community_labels,by = c("nums"="index"))
+    mat_labels <- mat_labels %>%
+      mutate(community_name = as.character(community_name),V2 = as.character(V2),node_names=as.character(node_names))
+    mat_labels$community_name[is.na(mat_labels$community_name)]="AAL_subcortex"
+    mat_labels$node_names[is.na(mat_labels$node_names)]= mat_labels$V2[is.na(mat_labels$node_names)]
+    
+    # Set names to node names
+    colnames(newCC)=mat_labels$node_names
+    rownames(newCC)=mat_labels$node_names
+    
+    #lapply
+    gen_plot <- function(W) {
+      newCC[upper.tri(newCC,diag = T)] = 0
+      newCC[upper.tri(newCC,diag = F)] = W
+      newCC[lower.tri(newCC)] <- t(newCC)[lower.tri(newCC)]
+      # Arrange by community membership
+      orderCC <- newCC[order(mat_labels$node_community),order(mat_labels$node_community)]
+      if (community_summary == T) {
+      commCC <- orderCC
+      df_CC <- as.data.frame(commCC)
+      rvals <- rowSums(abs(commCC)) #absolute value of t-statistic
+      rval_df <- data.frame(rvals = rvals,names = as.character(names(rvals)))
+      rval_df <- rval_df %>% 
+        left_join(mat_labels,by = c("names" = "node_names"))
+      
+      # Table
+      sdf <- rval_df %>% group_by(community_name) %>% summarize(m = mean(rvals)) %>% arrange(-m)
+
+        p <- ggplot(data = rval_df,
+                    aes(y=rvals,
+                        x=ordered(names,levels=rev(names)),
+                        fill = community_name,
+                        color = community_name)
+        ) + 
+          geom_bar(stat="identity",show.legend = F) + ylab("Mean absolute t-stat") + 
+          scale_fill_brewer(type = "qual",palette = "Dark2") + scale_color_brewer(type = "qual",palette = "Dark2") +
+          theme(
+            axis.text.y = element_blank(),
+            axis.title.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.line.y = element_blank(),
+            plot.margin = unit(c(0, 0, 0, 0), "cm"),
+            axis.text.x = element_text(angle = 90,hjust=1)) + 
+          coord_flip() 
+        
+        # matrix plot
+        g <- expand.grid(x=rownames(commCC),y=colnames(commCC))
+        g$vals = c(commCC)
+        g$x<-ordered(g$x,levels=colnames(commCC))
+        g$y<-ordered(g$y,levels=colnames(commCC))
+        grev<-g%>%map_df(rev)
+        # Weight matrix
+        matplot <- ggplot(data=grev,
+                          aes(x=x,
+                              y=ordered(y,levels=rev(levels(y))),
+                              fill=vals))+ 
+          geom_tile(show.legend = F) +
+          scale_fill_gradient2(low = "blue",high = "red",mid="white",midpoint = 0) + 
+          labs(fill = "t-stat") +
+          theme(axis.text.x = element_text(angle = 90,hjust = 0),
+                axis.title = element_blank(),
+                legend.position = "bottom",
+                axis.text = element_text(size = 5),
+                plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+          scale_x_discrete(position = "top")  + 
+          ggtitle(atlasname)
+        
+        
+        comboplot_top<-cowplot::plot_grid(plotlist = list(matplot,p),align = "hv",axis = "bt",rel_widths = c(1,.25))
+        return(comboplot_top)
+      }
+    }
+    pca_keep <- as.data.frame(pca_loadings[,1:k])
+    plist <- lapply(pca_keep,FUN = gen_plot)
+    comboplot<-cowplot::plot_grid(plotlist = plist,ncol = 1)
+    # print(comboplot)
+    cowplot::save_plot(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_pca_matrices.png",atlasname,gsr),
+                       comboplot, base_height = 44, base_width = 10)
+    return_obj <- list(feat_mat = newCC,community_ranks = sdf)
+    }
+  
+  return(return_obj)
+}
+
+
+run_ttest <- function(df,gsr,atlasname){
+  ttest_data <- df[, 3:dim(df)[2] ]
+  features <- as.matrix(ttest_data %>% select(-drug))
+  placebo <- features[ttest_data$drug==1,]
+  drug <- features[ttest_data$drug==0,]
+  tstats<-col_t_paired(drug,placebo) #drug minus placebo
+  
+  #send to visualizer
+  ttest_mat <- feat_ttest(tstats$statistic,atlasname,gsr=gsr,community_summary = T,GABA=T,transmodality = T)
+  return(ttest_mat)
+
+}
+
+run_pca <- function(df){
+  features=as.matrix(df%>% select(-drug,-subid,-sesid))
+  drug <- features[df$drug==0,]
+  placebo <- features[df$drug==1,]
+  difs=drug-placebo
+  pca <- prcomp(x = difs,scale. = T)
+  pc_mat <- pca_mats(pca_loadings=pca$rotation,atlasname,gsr=gsr,community_summary = T,k=4)
+  knitr::include_graphics(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_pca_matrices.png",atlasname,gsr))
+
+}
+
+region_plots <- function(df,var_name,xlabel){
+  ## signed plots ##
+  cat(sprintf('\n## Signed t-statistic for %s\n',xlabel))
+  # all regions
+  r=cor.test(df[,var_name],df$value,method = "pearson")
+  
+  all_plot <- ggplot(data = df,aes_string(x="value",y=var_name,color="community_name")) + 
+    geom_point() +geom_smooth(method = "lm") + geom_smooth(aes_string(x="value",y=var_name),method = "lm") +
+    xlab(xlabel) + ylab("mean abs(t-stat)")+
+    annotate(y=mean(df[,var_name]),x=mean(df$value),geom = "text",label=sprintf("r = %1.2f, p = %1.3f",r$estimate,r$p.value))+
+    ggtitle("signed t-stat")
+  legend_all = get_legend(all_plot+theme(legend.position = "right",legend.background=element_blank(),legend.box.margin = margin(0,0,0,12),legend.title = element_blank()))
+  all_plot <- all_plot+theme(legend.position = "none")
+  
+  # cortex
+  cortex = df %>% filter(!(community_name%in%c("AAL_subcortex")))
+  r=cor.test(cortex[,var_name],cortex$value,method = "pearson")
+  cortical_plot <- ggplot(data = cortex,aes_string(x="value",y=var_name,color="community_name")) +
+    geom_point() +xlab(xlabel) +
+    ylab("mean t-stat")+geom_smooth(method = "lm")+
+    annotate(y=mean(cortex[,var_name]),x=mean(cortex$value),geom = "text",label=sprintf("r = %1.2f, p = %1.3f",r$estimate,r$p.value))+
+    ggtitle("cortical t-stat")
+  legend_cortex = get_legend(cortical_plot+theme(legend.position = "right",legend.background=element_blank(),legend.box.margin = margin(0,0,0,12),legend.title = element_blank()))
+  cortical_plot <- cortical_plot+theme(legend.position = "none")
+
+  #subcortex
+  subcortex = df %>% filter(community_name%in%c("AAL_subcortex"))
+  r=cor.test(subcortex[,var_name],subcortex$value,method = "pearson")
+  subcortical_plot <- ggplot(data = subcortex,aes_string(x="value",y=var_name,color="community_name")) +
+    geom_point() +xlab(xlabel) +
+    ylab("mean t-stat")+geom_smooth(method = "lm")+
+    annotate(y=mean(subcortex[,var_name]),x=mean(subcortex$value),geom = "text",label=sprintf("r = %1.2f, p = %1.3f",r$estimate,r$p.value))+
+    ggtitle("sucortical t-stat")+theme(legend.position = "right",legend.background=element_blank())
+  legend_subcortex = get_legend(subcortical_plot+theme(legend.position = "right",legend.background=element_blank(),legend.box.margin = margin(0,0,0,12),legend.title = element_blank()))
+  subcortical_plot <- subcortical_plot+theme(legend.position = "none")
+  
+  ## Absolute value ##
+  cat(sprintf('\n## Absolute t-statistic for %s\n',xlabel))
+  # all regions
+  var_name = sprintf("%s_abs",var_name)
+  r=cor.test(df[,var_name],df$value,method = "pearson")
+  abs_all_plot <- ggplot(data = df,aes_string(x="value",y=var_name,color="community_name")) + 
+    geom_point() +geom_smooth(method = "lm") + geom_smooth(aes_string(x="value",y=var_name),method = "lm") +
+    xlab(xlabel) + ylab("mean abs(t-stat)")+
+    annotate(y=mean(df[,var_name]),x=mean(df$value),geom = "text",label=sprintf("r = %1.2f, p = %1.3f",r$estimate,r$p.value))+
+    ggtitle("absolute t-stat")+theme(legend.position = "none")
+  
+  # cortex
+  r=cor.test(cortex[,var_name],cortex$value,method = "pearson")
+  abs_cortical_plot <- ggplot(data = cortex,aes_string(x="value",y=var_name,color="community_name")) +
+    geom_point() +xlab(xlabel) +
+    ylab("mean t-stat")+geom_smooth(method = "lm")+
+    annotate(y=mean(cortex[,var_name]),x=mean(cortex$value),geom = "text",label=sprintf("r = %1.2f, p = %1.3f",r$estimate,r$p.value))+
+    ggtitle("cortical absolute t-stat")+theme(legend.position = "none")
+
+  #subcortex
+  r=cor.test(subcortex[,var_name],subcortex$value,method = "pearson")
+  abs_subcortical_plot <- ggplot(data = subcortex,aes_string(x="value",y=var_name,color="community_name")) +
+    geom_point() +xlab(xlabel) +
+    ylab("mean t-stat")+geom_smooth(method = "lm")+
+    annotate(y=mean(subcortex[,var_name]),x=mean(subcortex$value),geom = "text",label=sprintf("r = %1.2f, p = %1.3f",r$estimate,r$p.value))+
+    ggtitle("sucortical absolute t-stat")+theme(legend.position = "none")
+  
+  top_row <- cowplot::plot_grid(all_plot,abs_all_plot,legend_all,nrow=1,rel_widths = c(1,1,.333))
+  cortex_row <- cowplot::plot_grid(cortical_plot,abs_cortical_plot,legend_cortex,nrow=1,rel_widths = c(1,1,.333))
+  subcortex_row <- cowplot::plot_grid(subcortical_plot,abs_subcortical_plot,legend_subcortex,nrow=1,rel_widths = c(1,1,.333))
+  combined_plot <- cowplot::plot_grid(top_row,cortex_row,subcortex_row,ncol = 1)
+  return(combined_plot)
+}
+```
+
+```{r run_tests,fig.height=10}
+subData <- read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
+subInfo <- subData %>% filter(exists==1 & motion_pass==1)
+
+PNCData <- read.csv('/cbica/projects/alpraz_EI/input/PNC_sublist_FD.csv')
+PNCInfo <- PNCData %>% filter(exists==1 & motion_pass==1)
+
+#### SET OPTIONS ####
+GSR="GSR"
+
+# Do we want to pull out only certain brain areas?
+subdivide = F
+subdivision = "all"# "regional" #"transmodal25"# "all"
+cat(sprintf("\nsubdivision = %s\n",subdivision))
+
+# Atlas and FE  
+atlas_list = c("schaefer400x7_aal")#,"schaefer200x7_aal") #"schaefer400x7_aal","schaefer200x7_aal","aal116","HarvardOxford","glasser360","gordon333_aal","BN_Atlas_246","aal116","schaefer200x7_aal"
+###############
+
+for (atlasname in atlas_list){
+  cat(atlasname)
+  for (GSR in c("GSR")) {
+    cat(GSR)
+    ## Load the data
+    if (file.exists(sprintf("/cbica/projects/alpraz_EI/input/CorMats/%s_%s_%s.rds",atlasname,GSR,subdivision))) {
+      df <- readRDS(sprintf("/cbica/projects/alpraz_EI/input/CorMats/%s_%s_%s.rds",atlasname,GSR,subdivision))
+    } else {
+      gm<- subInfo %>%
+        group_by(subid, sesid) %>%
+        mutate(mat = list(extract_matrix2(subid,sesid,atlasname,GSR,subdivide=subdivide,subdivision = subdivision)))
+      
+      if (subdivision=="regional") {
+        mat <- do.call(rbind, lapply(gm$mat, function(x) data.frame(x)))
+        df <- gm %>% full_join(mat,by=c("subid","sesid"))%>%select(-mat)
+      } else {
+        mat <- data.frame(matrix(unlist(gm$mat), nrow=dim(gm[1]), byrow=T))
+        df <- cbind(gm %>%
+                      ungroup() %>%
+                      select(subid,sesid,drug)
+                    ,mat)
+      }
+      
+      print("saving...")
+      saveRDS(df,file = sprintf("/cbica/projects/alpraz_EI/input/CorMats/%s_%s_%s.rds",atlasname,GSR,subdivision))
+      print("saved")
+      rm(gm)
+    }
+    
+    #ttest
+    ttest_mat <- run_ttest(df = df,atlasname = atlasname,gsr=GSR)
+    knitr::include_graphics(
+      sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_tstat_matrix.png",atlasname,GSR)
+      )
+    knitr::include_graphics(
+      sprintf("/cbica/projects/alpraz_EI/output/drug_classification/transmodality_%s_%s_tstat_matrix.png",atlasname,GSR)
+      )
+    
+  # ## PNC
+  # ## Load the data
+  # if (file.exists(sprintf("/cbica/projects/alpraz_EI/input/CorMats/PNC/%s_%s.rds",atlasname,subdivision))) {
+  #   df <- readRDS(sprintf("/cbica/projects/alpraz_EI/input/CorMats/PNC/%s_%s.rds",atlasname,subdivision))
+  # } else {
+  #   gm<- PNCInfo %>% 
+  #     group_by(subid,sesid) %>%
+  #     mutate(mat = list(extract_matrix2(subid,sesid,atlasname,"PNC",subdivide=subdivide,subdivision = subdivision)))
+  #   mat <- data.frame(matrix(unlist(gm$mat), nrow=dim(gm[1]), byrow=T))
+  #   df <- cbind(gm %>% 
+  #                 ungroup() %>% 
+  #                 select(subid,sesid)
+  #               ,mat)
+  #   print("saving...")
+  #   saveRDS(df,file = sprintf("/cbica/projects/alpraz_EI/input/CorMats/PNC/%s_%s.rds",atlasname,subdivision))
+  #   print("saved")
+  #   rm(gm)
+  # }
+  }
+}
+```
