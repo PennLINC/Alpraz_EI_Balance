@@ -1,5 +1,5 @@
 ---
-title: "PNC drug analysis"
+title: "PNC alpraz model predictions analysis"
 author: "Bart"
 date: "7/4/2020"
 output: html_document
@@ -22,6 +22,7 @@ font_size <- 16
 theme_set(theme_classic(base_family = "sans",base_size = font_size))
 theme_replace(axis.text=element_text(colour = "black",size = font_size))
 
+# Load al the data
 PNCData <- read.csv('/cbica/projects/alpraz_EI/input/PNC_sublist_FD.csv')
 demo<-read.csv('/cbica/projects/alpraz_EI/input/n9498_demographics_go1_20161212.csv')
 idemoQA <- read.csv('/cbica/projects/alpraz_EI/input/n1601_idemo_FinalQA_092817.csv')
@@ -32,6 +33,7 @@ alpraz_info = read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
 alpraz_demo = read.csv('/cbica/projects/alpraz_EI/input/Alpraz_deographics.csv')
 alpraz_info <- alpraz_info %>% left_join(alpraz_demo,by=c("subid"="bblid", "sesid"="fmriid"))
 
+# Get exclusions due to poor data quality and health data (low threshhold normal used here)
 PNCData <- PNCData %>%
   left_join(demo,by = c("subid"="bblid"))%>%
   left_join(idemoBehavior,by=c("subid"="bblid"))%>%
@@ -45,6 +47,9 @@ PNCData$exclusions <-  PNCData$ltnExcludev2==1 &
 ```
 
 ```{r functions,echo=FALSE}
+# A number of functions that are used.
+
+# This one just merges data.frames and deals with variable types, etc.
 data_mgmt <- function(fname){
   pred_results <- readRDS(fname)%>%
     left_join(PNCData,by = "subid")
@@ -59,17 +64,24 @@ data_mgmt <- function(fname){
   return(pred_results)
 }
 
+# This runs models and plots the outputs.
 plot_results <- function(pred_results,title_text){
+  
+  # This plot shows the number of drug vs placebo labels
   bar_plot<-ggplot(data = pred_results,aes(x=oPred,fill=oPred)) +
     geom_bar(stat="count",show.legend = F)+
     scale_fill_brewer(type = "qual",palette = "Set1")+xlab("")
   
+  # This shows how they are distributed over age
   dens_plot <- ggplot(data = pred_results,aes(x=age,fill=oPred)) +
     geom_density(alpha=.5,show.legend = T) +
     scale_fill_brewer(type = "qual",palette = "Set1") +
     theme(legend.position = c(.2,1),legend.title = element_blank(),legend.background = element_blank(),legend.direction = "horizontal",
           axis.text = element_blank(),axis.ticks = element_blank(),axis.title = element_blank(),axis.line = element_blank())
 
+  # We can fit the models as lm/glm or as gam. Both are done here, but we only use GAM for the final results.
+  
+  # First we fit logistic regression with the hard classifier labels as outcome.
   cat("\nLinear logistic regression\n")
   mylogit <- glm(nPred ~age + oSex +FD + idemoBehAllEmoNrCount , data = pred_results, family = "binomial",
                  subset = exclusions==0)
@@ -83,22 +95,15 @@ plot_results <- function(pred_results,title_text){
   mygam <- gam(nPred ~s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount, data = pred_results, family = "binomial",
                  subset = exclusions==0)
   print(summary(mygam))
-  FDpred <- sjPlot::plot_model(mygam,type = "pred",terms = "age",
+  gam_logistic_plot <- sjPlot::plot_model(mygam,type = "pred",terms = "age",
                        show.data = F,title = "GAM Fit")+ylab("Probability of Drug")+xlab("Age (years)")+theme(plot.title = element_blank())
-
-  # FDpred <- visualize_model(mygam,smooth_var = "age",int_var = NULL,group_var = NULL,derivative_plot = F)
   
   
   titleplot <- ggdraw() + 
   draw_label(title_text,fontface = 'bold', x = 0, hjust = 0) +
     theme(plot.margin = margin(0, 0, 0, 7))
   
-  # top=cowplot::plot_grid(plotlist = list(bar_plot,dens_plot),nrow = 1,greedy = T)
-  # bottom=cowplot::plot_grid(plotlist = list(glmplot,FDpred),greedy = T)
-  # all <- cowplot::plot_grid(plotlist = list(titleplot,top,bottom),nrow = 3,greedy = T,
-  #                           rel_heights = c(.1,1,1))
-  # print(all)
-  # 
+  # Next we use distance from the classification hyperplane, a continuous measure, as the outcome. Fit as lm and gam.
   cat("\nDistance\n")
   pred_results$Distance = pred_results$distance
   dist_bar_plot<-ggplot(data = pred_results,aes(x=Distance,fill=oPred)) +
@@ -117,15 +122,14 @@ plot_results <- function(pred_results,title_text){
   mygam <- gam(Distance ~s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount, data = pred_results,
                  subset = exclusions==0)
   print(summary(mygam))
-  # DistGAM <- sjPlot::plot_model(mygam,type = "pred",terms = "age",axis.title = c("Age","Distance"),
-  #                      show.data = T,title = "GAM Fit")+theme(title=element_blank())
   
   DistGAM <- visualize_model(mygam,smooth_var = "age",int_var = NULL,group_var = NULL,derivative_plot = T)
-
+  
+  # Compile the plots and display
   left1=cowplot::plot_grid(plotlist = list(bar_plot,dist_bar_plot),ncol = 1,greedy = T)
   glmcombo = cowplot::plot_grid(plotlist = list(dens_plot,glmplot),
                                 ncol = 1,axis = "lr",align = "v",rel_heights = c(.13,1),greedy = T)
-  gamcombo = cowplot::plot_grid(plotlist = list(dens_plot,FDpred),
+  gamcombo = cowplot::plot_grid(plotlist = list(dens_plot,gam_logistic_plot),
                                 ncol = 1,axis = "lr",align = "v",rel_heights = c(.4,1),greedy = T)
   ggdraw(add_sub(gamcombo, "Annotation inside plot", vpadding=grid::unit(0, "lines"),
        y = 0, x = 14, hjust = 0))
@@ -139,6 +143,7 @@ plot_results <- function(pred_results,title_text){
 ```
 
 ## Schaefer 200
+Ignorerd for now.  
 
 ```{r s200, eval = FALSE}
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer200x7_aal_all.rds')
@@ -150,6 +155,7 @@ plot_results(pred_results,"Schaefer200_All_Regions")
 ```
 
 ## Schaefer 400
+Results when using all the schaefer 400 regions.  
 
 ```{r 400,fig.height=8}
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_all.rds')
@@ -160,7 +166,10 @@ plot_results(pred_results,"Schaefer400_All_Regions")
 ```
 
 ## Transmodality 
+Looking at the classification models trained on transmodal connections only (top 25% transmodal areas to the rest of the brain).  
+
 ### Schaefer 200 transmodal
+Ignored for now.  
 
 ```{r trans 200, eval=FALSE}
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer200x7_aal_transmodal25.rds')
@@ -183,6 +192,7 @@ pred_a_200 = pred_results
 ```
 
 ### Schaefer 200 unimodal
+Ignored for now.  
 
 ```{r uni 200, eval=FALSE}
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer200x7_aal_unimodal25.rds')
@@ -246,8 +256,10 @@ pred_s_400 = pred_results
 ```
 
 ### Age*Classifier  
+Looking at age*model interactions. We want to test the hypothesis that transmodal areas are undergoing the most pronounced E:I development in this age range. So, we test whether the transmodal model will produce labels (or distance values) that are more associated with age than the unimodal classification model.  
 
 ```{r sens_assoc diff,fig.height=8,fig.width=8}
+# Skipping shcaefer 200 for now.
 # cat("s200\n")
 # pred_a_200 <- pred_a_200 %>%
 #   mutate(a_distance=distance,
@@ -301,98 +313,19 @@ pred_join_400 <- pred_a_400 %>%
   left_join(pred_s_400,by=c("subid","age","FD","oSex","idemoBehAllEmoNrCount"))%>%
   pivot_longer(cols = c(transmodal_classifier,unimodal_classifier),names_to = "subdivision",values_to = "Distance")
 
-# mermod <- lmerTest::lmer(distance ~ oSex+age +FD+subdivision+(1|subid),data = pred_join)
-# summary(mermod)
-# sjPlot::plot_model(mermod,type = "pred",show.data = F,terms = "subdivision")
-# tab_model(mermod)
-
-mermod2 <- lmerTest::lmer(Distance ~ oSex+FD+age*subdivision+(1|subid),data = pred_join_400)
-summary(mermod2)
-sjPlot::plot_model(mermod2,type = "int",show.data = F,title = "Schaefer 400")
-tab_model(mermod2)
-
-
-pred_wide <- pred_a_400
-pred_wide$unimodal_classifier <- pred_s_400$unimodal_classifier
-pred_wide$classifier_diff <- pred_wide$transmodal_classifier - pred_wide$unimodal_classifier
-l<-mgcv::gam(classifier_diff ~ s(age,k=4)+oSex+FD, data = pred_wide,random=list(subid=~1))
-summary(l)
-visualize_model(modobj = l,smooth_var = "age",int_var = NULL,group_var = NULL,derivative_plot = T)
-
-# plot_model(l,type = "pred",show.data = T)
-# 
-# pred_join <- pred_a_400 %>%
-#   left_join(pred_s_400,by=c("subid","age","FD","oSex","idemoBehAllEmoNrCount"))%>%
-#   pivot_longer(cols = c(a_nPred,s_nPred),names_to = "subdivision",values_to = "pred_label")
-# 
-# mermod2 <- glmer(pred_label ~ oSex+FD+idemoBehAllEmoNrCount+age*subdivision+(1|subid),data = pred_join,family="binomial")
+# Fit as lm. Skip now because we use GAM (below)
+# mermod2 <- lmerTest::lmer(Distance ~ oSex+FD+age*subdivision+(1|subid),data = pred_join_400)
 # summary(mermod2)
 # sjPlot::plot_model(mermod2,type = "int",show.data = F,title = "Schaefer 400")
 # tab_model(mermod2)
-# 
-# #fit as GAM
+
+# Fit as GAM
 pred_join_400$oSubdivision = ordered(pred_join_400$subdivision,levels = c("unimodal_classifier","transmodal_classifier"))
 gmod <-mgcv::gamm(Distance ~ oSex+FD+idemoBehAllEmoNrCount+ s(age,k=4) + s(mood_corrtraitsv2,k=4) + oSubdivision + s(age,by = oSubdivision,k=4) + s(mood_corrtraitsv2,by=oSubdivision),
                   data = pred_join_400,random=list(subid=~1))
 summary(gmod$gam)
 visualize_model(modobj = gmod,smooth_var = "age",int_var = "oSubdivision",group_var = NULL,derivative_plot = T)
 
-# ggplot(data = pred_join,aes(x=distance,fill=subdivision))+geom_density(alpha=.5,position = "dodge")
-```
-
-### Age effects in CC vs drug effects
-
-```{r age_drug,eval=FALSE,include=FALSE}
-
-df <- readRDS("/cbica/projects/alpraz_EI/input/CorMats/PNC/schaefer400x7_aal_all.rds")
-df_long <- df %>% pivot_longer(cols = starts_with("X"))
-df_long <- df_long %>%
-  left_join(PNCData %>%
-              select(subid,sesid,sex,FD,ltnExcludev2,exclusions,ageAtCnb1),
-            by = c("subid","sesid"))
-
-df_models <- df_long %>%
-  group_by(name)%>%
-  do(mod = lm(value ~ ageAtCnb1 + sex + FD,subset = exclusions==0, data = .))
-
-df_models <- df_long %>%
-  nest(data = -name) %>% 
-  mutate(
-    fit = map(data, ~ lm(value ~ ageAtCnb1 + sex + FD,subset = exclusions==0, data = .)),
-    tidied = map(fit, tidy)
-  ) %>% 
-  unnest(tidied)
-
-ModCoef = tidy(df_models, mod)
-ageCoef <- df_models  %>% filter(term=="ageAtCnb1")
-
-subData <- read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
-alpraz_results <- readRDS("/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_GSR_all_svm_1_permute_off_results.rds")
-b<-alpraz_results[[1]]
-pred_data<-b$pred_data %>% left_join(subData,by=c("subid","sesid"))
-# Quick check on FD by pred labels
-mod <- glm(model.pred ~ FD,family = "binomial",data = pred_data)
-
-
-W <- as.data.frame(alpraz_results[[2]])%>%
-  mutate(name = rownames(.))
-W$w <- W$`alpraz_results[[2]]`
-coef_W <- ageCoef %>% left_join(W,by = "name")
-
-cor.test(coef_W$estimate,coef_W$w)
-
-## Get alpraz tstats
-alpraz_df <- readRDS("/cbica/projects/alpraz_EI/input/CorMats/schaefer400x7_aal_GSR_all.rds")
-alpraz_long <- alpraz_df %>% pivot_longer(cols = starts_with("X"))
-
-alpraz_models <- alpraz_long %>%
-  group_by(name)%>%
-  do(ttest = t.test(.$value[.$drug==0],.$value[.$drug==1],paired = F))
-Tdf = tidy(alpraz_models, ttest)
-
-coef_T <- ageCoef %>% left_join(Tdf,by = "name")
-cor.test(coef_T$statistic.x,coef_T$statistic.y)
-l <- lm(statistic.y ~ statistic.x, data = coef_T)
 ```
 
 ## Clinical effects
@@ -406,34 +339,6 @@ pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/scha
 pred_clinical <- pred_results %>%
   left_join(clinical,by = "subid")%>%
   left_join(clinical_cortraits,by="bblid")
-
-
-mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + s(overall_psychopathology_4factorv2,k=4) ,data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "overall_psychopathology_4factorv2",int_var = NULL,group_var = NULL)
-
-mygam <- gam(distance ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + ti(overall_psychopathology_4factorv2,k=4) + ti(age,overall_psychopathology_4factorv2,k=4),data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "age",int_var = "overall_psychopathology_4factorv2",group_var = NULL)
-
-
-# Mood
-mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + s(mood_4factorv2,k=4) ,data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "mood_4factorv2",int_var = NULL,group_var = NULL)
-
-mygam <- gam(distance ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + ti(mood_4factorv2,k=4) + ti(age,mood_4factorv2,k=4),data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "age",int_var = "mood_4factorv2",group_var = NULL)
-
-# Psychosis
-mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + s(psychosis_4factorv2,k=4) ,data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "psychosis_4factorv2",int_var = NULL,group_var = NULL)
-
-mygam <- gam(distance ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + ti(psychosis_4factorv2,k=4) + ti(age,psychosis_4factorv2,k=4),data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "age",int_var = "psychosis_4factorv2",group_var = NULL)
 
 # All dimensions
 mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + s(overall_psychopathology_4factorv2,k=4) + s(psychosis_4factorv2,k=4) + s(mood_4factorv2,k=4) + s(externalizing_4factorv2,k=4) + s(phobias_4factorv2,k=4),data = pred_clinical,subset = exclusions==0)
@@ -464,46 +369,16 @@ mygam <- gam(distance ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount +
              data = pred_clinical,subset = exclusions==0)
 summary(mygam)
 visualize_model(mygam,smooth_var = "age",int_var =  "mood_4factorv2",group_var = NULL)
-###############
-#### Assoc ####
-###############
+
+
+###############################
+#### Transmodal classifier ####
+###############################
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_transmodal25.rds')
 pred_clinical <- pred_results %>%
   left_join(clinical,by = "subid")%>%
   left_join(clinical_cortraits,by="bblid")%>%
   mutate(distance = as.numeric(distance),abs_distance = abs(distance))
-
-mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + s(overall_psychopathology_4factorv2,k=4) ,data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "overall_psychopathology_4factorv2",int_var = NULL,group_var = NULL)
-
-mygam <- gam(distance ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + ti(overall_psychopathology_4factorv2,k=4) + ti(age,overall_psychopathology_4factorv2,k=4),data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "age",int_var = "overall_psychopathology_4factorv2",group_var = NULL)
-
-
-# Mood
-
-mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + s(mood_4factorv2,k=4) ,data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "mood_4factorv2",int_var = NULL,group_var = NULL)
-
-mygam <- gam(distance ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + ti(mood_4factorv2,k=4) + ti(age,mood_4factorv2,k=4),data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "age",int_var = "mood_4factorv2",group_var = NULL)
-
-mygam <- gam(mood_4factorv2 ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + ti(distance,k=4) + ti(age,distance,k=4),data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "age",int_var = "distance",group_var = NULL)
-
-# Psychosis
-mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + s(psychosis_4factorv2,k=4) ,data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "psychosis_4factorv2",int_var = NULL,group_var = NULL)
-
-mygam <- gam(distance ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + ti(psychosis_4factorv2,k=4) + ti(age,psychosis_4factorv2,k=4),data = pred_clinical,subset = exclusions==0)
-summary(mygam)
-visualize_model(mygam,smooth_var = "age",int_var = "psychosis_4factorv2",group_var = NULL)
 
 # All dimensions
 mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + s(overall_psychopathology_4factorv2,k=4) + s(psychosis_4factorv2,k=4) + s(mood_4factorv2,k=4) + s(externalizing_4factorv2,k=4) + s(phobias_4factorv2,k=4),data = pred_clinical,subset = exclusions==0)
@@ -543,189 +418,10 @@ mygam <- gam(distance ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount +
 summary(mygam)
 visualize_model(mygam,smooth_var = "age",int_var =  "mood_corrtraitsv2",group_var = NULL)
 
-
-##################
-## Interraction ##
-##################
-pred_clinical <- pred_join_400 %>%
-  left_join(clinical,by = "subid")%>%
-  left_join(clinical_cortraits,by="bblid")
-
-gmod <- mgcv::gamm(Distance ~ oSex+FD+idemoBehAllEmoNrCount+ s(age,k=4) + 
-                     s(psychosis_4factorv2,k=4) + 
-                     s(psychosis_4factorv2,by=oSubdivision,k=4) + 
-                     oSubdivision + 
-                     s(age,by = oSubdivision,k=4),
-                  data = pred_clinical,random=list(bblid=~1))
-summary(gmod$gam)
 ```
-
-## Cognitive Measures
-
-```{r cognitive, eval=TRUE,include=T}
-cog <- read.csv('/cbica/projects/alpraz_EI/input/n1601_cnb_factorscores.csv')
-cog$subid=cog$bblid
-pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_all.rds')
-
-pred_cog <- pred_results %>%
-  left_join(cog,by = "subid")
-
-# Test logistic
-mygam <- gam(nPred ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + Overall_Efficiency,data = pred_cog,family = "binomial",subset = exclusions==0)
-summary(mygam)
-sjPlot::plot_model(mygam,type = "pred")
-
-## Distance
-## Overall
-for (cog_var in c("Overall_Efficiency","Overall_Accuracy","Overall_Speed")) {
-  cat(sprintf('\n\nResults for %s: \n',cog_var))
-  model_formula = sprintf('distance ~ s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount + s(%s,k=4)',cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = cog_var,int_var = NULL,group_var = NULL)
-  
-  model_formula = sprintf('distance ~ ti(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount +ti(%s)+ ti(age,%s,k=4)',cog_var,cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = "age",int_var = cog_var,group_var = NULL)
-  
-}
-## Accuracy
-cat('\n\n ACCURACY \n')
-for (cog_var in c("F1_Exec_Comp_Res_Accuracy","F2_Social_Cog_Accuracy","F3_Memory_Accuracy")) {
-  cat(sprintf('\n\nResults for %s: \n',cog_var))
-  model_formula = sprintf('distance ~ s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount + s(%s,k=4)',cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = cog_var,int_var = NULL,group_var = NULL)
-  
-  model_formula = sprintf('distance ~ ti(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount +ti(%s)+ ti(age,%s,k=4)',cog_var,cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = "age",int_var = cog_var,group_var = NULL)
-  
-}
-
-## Efficiency
-cat('\n\n EFFICIENCY \n')
-for (cog_var in c("F1_Complex_Reasoning_Efficiency","F2_Memory.Efficiency","F3_Executive_Efficiency","F4_Social_Cognition_Efficiency")) {
-  cat(sprintf('\n\nResults for %s: \n',cog_var))
-  model_formula = sprintf('distance ~ s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount + s(%s,k=4)',cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = cog_var,int_var = NULL,group_var = NULL)
-  
-  model_formula = sprintf('distance ~ ti(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount +ti(%s)+ ti(age,%s,k=4)',cog_var,cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = "age",int_var = cog_var,group_var = NULL)
-  
-}
-
-## Speed
-cat('\n\n SPEED \n')
-for (cog_var in c("F1_Slow_Speed","F2_Fast_Speed","F3_Memory_Speed")) {
-  cat(sprintf('\n\nResults for %s: \n',cog_var))
-  model_formula = sprintf('distance ~ s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount + s(%s,k=4)',cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = cog_var,int_var = NULL,group_var = NULL)
-  
-  model_formula = sprintf('distance ~ ti(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount +ti(%s)+ ti(age,%s,k=4)',cog_var,cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = "age",int_var = cog_var,group_var = NULL)
-  
-}
-
-
-### Now for transmodal only ####
-pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_transmodal25.rds')
-
-pred_cog <- pred_results %>%
-  left_join(cog,by = "subid")
-cat('\n\n ** TRANSMODAL ONLY **\n')
-
-mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + 
-               s(Overall_Efficiency) +
-               ti(F1_Complex_Reasoning_Efficiency)+
-               ti(F2_Memory.Efficiency)+
-               ti(F3_Executive_Efficiency)+
-               ti(F4_Social_Cognition_Efficiency)+
-               ti(F1_Complex_Reasoning_Efficiency,age)+
-               ti(F2_Memory.Efficiency,age)+
-               ti(F3_Executive_Efficiency,age)+
-               ti(F4_Social_Cognition_Efficiency,age),
-             data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = "age",int_var = cog_var,group_var = NULL)
-
-## Overall
-for (cog_var in c("Overall_Efficiency","Overall_Accuracy","Overall_Speed")) {
-  cat(sprintf('\n\nResults for %s: \n',cog_var))
-  model_formula = sprintf('distance ~ s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount + s(,k=4)',cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = cog_var,int_var = NULL,group_var = NULL)
-  
-  model_formula = sprintf('distance ~ ti(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount +ti(%s)+ ti(age,%s,k=4)',cog_var,cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = "age",int_var = cog_var,group_var = NULL)
-  
-}
-## Accuracy
-cat('\n\n ACCURACY \n')
-for (cog_var in c("F1_Exec_Comp_Res_Accuracy","F2_Social_Cog_Accuracy","F3_Memory_Accuracy")) {
-  cat(sprintf('\n\nResults for %s: \n',cog_var))
-  model_formula = sprintf('distance ~ s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount + s(%s,k=4)',cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = cog_var,int_var = NULL,group_var = NULL)
-  
-  model_formula = sprintf('distance ~ ti(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount +ti(%s)+ ti(age,%s,k=4)',cog_var,cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = "age",int_var = cog_var,group_var = NULL)
-  
-}
-
-## Efficiency
-cat('\n\n EFFICIENCY \n')
-for (cog_var in c("F1_Complex_Reasoning_Efficiency","F2_Memory.Efficiency","F3_Executive_Efficiency","F4_Social_Cognition_Efficiency")) {
-  cat(sprintf('\n\nResults for %s: \n',cog_var))
-  model_formula = sprintf('distance ~ s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount + s(%s,k=4)',cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = cog_var,int_var = NULL,group_var = NULL)
-  
-  model_formula = sprintf('distance ~ ti(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount +ti(%s)+ ti(age,%s,k=4)',cog_var,cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = "age",int_var = cog_var,group_var = NULL)
-  
-}
-
-## Speed
-cat('\n\n SPEED \n')
-for (cog_var in c("F1_Slow_Speed","F2_Fast_Speed","F3_Memory_Speed")) {
-  cat(sprintf('\n\nResults for %s: \n',cog_var))
-  model_formula = sprintf('distance ~ s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount + s(%s,k=4)',cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = cog_var,int_var = NULL,group_var = NULL)
-  
-  model_formula = sprintf('distance ~ ti(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount +ti(%s)+ ti(age,%s,k=4)',cog_var,cog_var)
-  mygam <- gam(formula = as.formula(model_formula),data = pred_cog,subset = exclusions==0)
-  print(summary(mygam))
-  visualize_model(mygam,smooth_var = "age",int_var = cog_var,group_var = NULL)
-  
-}
-
-```
-
 
 ## Other atlases
+Main result replication across other atlas parcellations. Skipping for now.  
 ### AAL
 
 ```{r aal,eval=FALSE}

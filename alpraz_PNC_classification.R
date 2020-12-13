@@ -9,6 +9,7 @@ theme_set(theme_classic())
 setwd("/cbica/projects/alpraz_EI/scripts/")
 
 extract_matrix2 <- function(subid,sesid,atlasname,gsr,subdivide=F, subdivision=NULL){
+  # This function loads the connectivity matrix for a subj, filters features (if needed; subdivide=T and specify subdivision), and converts to a vector
   if (gsr == "GSR") {
     fname <- sprintf("/cbica/projects/alpraz_EI/data/TASK_GSR/%s/%s/%s_CC_GSR_000.netcc",subid,sesid,atlasname)
   } else if (gsr == "rest_GSR") {
@@ -125,7 +126,8 @@ extract_matrix2 <- function(subid,sesid,atlasname,gsr,subdivide=F, subdivision=N
 
 
 SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
-
+  #SVM 2-class classifier
+  
   # set up folds for CV
   if (folds == "LOO") {
     num_folds = length(unique(df$subid))
@@ -189,6 +191,7 @@ SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
 }
 
 RF_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
+  # Random forest classifier
   
   # set up folds for CV
   if (folds == "LOO") {
@@ -245,6 +248,7 @@ RF_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
 }
 
 run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,permutation_test = F, num_permutations = 10000,type = "svm"){
+  ## This sends the data to the desired classifier and other functions
   if (feature_selection == T) {
     # cat(sprintf("\nPerforming feature extraction: extracting the top %1.3f features\n",feature_proportion))
   }
@@ -335,7 +339,7 @@ run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,per
 }
 
 featureExtraction <- function(trainingData, feature_proportion = .1){
-  
+  # This is no longer used, but it will perform data driven feature selection.
   features <- as.matrix(trainingData %>% select(-drug))
   drug <- features[trainingData$drug==0,]
   placebo <- features[trainingData$drug==1,]
@@ -348,7 +352,7 @@ featureExtraction <- function(trainingData, feature_proportion = .1){
   return(list(newTrainingData,keep_features))
 }
 
-FD_thresh = .5
+FD_thresh = .3
 subData <- read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
 subInfo <- subData %>% filter(exists==1 & motion_pass==1)
 # Make sure whole subj is removed
@@ -368,27 +372,38 @@ classifier = "svm"
 GSR="GSR"
 
 # Permutation test?
+# Do we want to use a permutation test for significance testing?
 perm_test="permute_off"
 
 # Do we want to pull out only certain brain areas?
-subdivide = T
-subdivision = "transmodal25"# "regional" #"transmodal25"# "all" "unimodal25"
+# Set subdivide = TRUE if this is desired
+# Set subdivision desired:
+## "transmodal25" = top 25% most transmodal regions
+## "unimodal25" = top 25% most unimodal regions
+## "regional" = perform classification separately for each region in the atlas.
+subdivide = TRUE
+subdivision = "transmodal25"
 cat(sprintf("\nsubdivision = %s\n",subdivision))
 
 # Atlas and FE  
-atlas_list = c("schaefer200x7_aal","schaefer400x7_aal") #"schaefer400x7_aal","schaefer200x7_aal","aal116","HarvardOxford","glasser360","gordon333_aal","BN_Atlas_246","aal116","schaefer200x7_aal"
+## Create a list of atlases that we want to use for classification. Now we are using only schaefer 400.
+## "schaefer200x7_aal" can be used to do schaefer200 as well.
+atlas_list = c("schaefer400x7_aal") 
 fe_list=c(1)
 ###############
 
 atlas_acc <- matrix(ncol = 6)
 colnames(atlas_acc)=c("accuracy", "p.value", "fe","perm.p","atlas","num_features")
 
+## Loop over atlases and run classification
 for (atlasname in atlas_list){
   cat(atlasname)
   ## Load the data
   if (file.exists(sprintf("/cbica/projects/alpraz_EI/input/CorMats/%s_%s_%s.rdss",atlasname,GSR,subdivision))) {
+    # The data has already been compiled into a dataframe, just load it.
     df <- readRDS(sprintf("/cbica/projects/alpraz_EI/input/CorMats/%s_%s_%s.rds",atlasname,GSR,subdivision))
   } else {
+    # Compile the data if we haven't already.
     gm<- subInfo %>%
       group_by(subid, sesid) %>%
       mutate(mat = list(extract_matrix2(subid,sesid,atlasname,GSR,subdivide=subdivide,subdivision = subdivision)))
@@ -475,8 +490,8 @@ for (atlasname in atlas_list){
 # p001 <- (qbinom(.001/2,size = n,prob = .5,lower.tail = F) +1)/n
 
 
-## PNC
-## Load the data
+## Now we use the trained model on the PNC data.
+## Load the PNC data
 if (file.exists(sprintf("/cbica/projects/alpraz_EI/input/CorMats/PNC/%s_%s.rds",atlasname,subdivision))) {
   df <- readRDS(sprintf("/cbica/projects/alpraz_EI/input/CorMats/PNC/%s_%s.rds",atlasname,subdivision))
 } else {
@@ -508,5 +523,6 @@ distance <- decisionValues/norm(w)
 df$decisionValues <- t(decisionValues)
 df$distance <- t(distance)
 df$pred <-svm.pred
+#save the output
 saveRDS(df%>%select(subid,sesid,pred,distance,decisionValues),file = sprintf("/cbica/projects/alpraz_EI/output/PNC_predictions/%s_%s.rds",atlasname,subdivision))
 }
