@@ -47,10 +47,12 @@ There is functionality to run permutation tests for each of these, but I have it
 
 `perm_test="permute_on"` for permutations.  
 
+The important thing to replicate here is that you get significant classifier accuracy. The accuracies should be in the mid to high 60s.  There is code in the script for the next step that will print the classification accuracy and significance.  
+
 5. Finally, this Rmd script takes the output from step `4` and does some analyses.  
 - It relies on the script `Alpraz_viz_functions.R` to make most of the figures/visualizations. 
   - That script is basically a bunch of functions. It isn't documented right now, sorry, but it is just making images.
-- The important things to replicate in script `5` are the GAM models that look at how classification distance is related to `age`. This is the central result of the paper. You can see in the script that there is a function that runs GAM models and prints the plots. This should be done for the Rmd sections that run the function for `Schaefer 400`. 
+- The important things to replicate in script `05` are the GAM models that look at how classification distance is related to `age`. This is the central result of the paper. You can see in the script that there is a function that runs GAM models and prints the plots. This should be done for the Rmd sections that run the function for `Schaefer 400`. 
 
 ## For the blind replication
 The most important set of analyses to replicate with your own scripts would be:
