@@ -34,15 +34,19 @@ alpraz_demo = read.csv('/cbica/projects/alpraz_EI/input/Alpraz_deographics.csv')
 alpraz_info <- alpraz_info %>% left_join(alpraz_demo,by=c("subid"="bblid", "sesid"="fmriid"))
 
 # Get exclusions due to poor data quality and health data (low threshhold normal used here)
+FD_thresh <- .3 #threshold for mean FD
 PNCData <- PNCData %>%
   left_join(demo,by = c("subid"="bblid"))%>%
   left_join(idemoBehavior,by=c("subid"="bblid"))%>%
   left_join(idemoQA,by = c("subid"="bblid"))%>%
-  left_join(health, by = c("subid"="bblid"))
+  left_join(health, by = c("subid"="bblid"))%>%
+  mutate(FD_exclude = FD>FD_thresh)
 PNCData$exclusions <-  PNCData$ltnExcludev2==1 & 
   PNCData$idemoExcludeVoxelwise==1 & 
   PNCData$idemoRelMeanRMSMotionExclude==1 & 
-  PNCData$idemoRelMaxRMSMotionExclude==1
+  PNCData$idemoRelMaxRMSMotionExclude==1 &
+  PNCData$FD_exclude==1
+
 
 ```
 
@@ -163,6 +167,16 @@ display_results("schaefer400x7_aal",perm_results = F)
 # knitr::include_graphics("/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_matrix.png")
 # knitr::include_graphics("/cbica/projects/alpraz_EI/output/drug_classification/transmodality_schaefer400x7_aal_matrix.png")
 plot_results(pred_results,"Schaefer400_All_Regions")
+```
+
+```{r write_data}
+# Write out data to be used in potential future analysis
+PNC_filtered <- pred_results %>%
+  filter(exclusions == 0)%>%
+  mutate(sesid=sesid.x)%>%
+  select(subid,sesid,age,sex,FD,idemoBehAllEmoNrCount,distance)
+write.table(x = PNC_filtered,file = '/cbica/projects/alpraz_EI/input/PNC_sublist_FD_age_distance_filter.csv',row.names = F,sep = ",")
+
 ```
 
 ## Transmodality 

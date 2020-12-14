@@ -352,7 +352,7 @@ featureExtraction <- function(trainingData, feature_proportion = .1){
   return(list(newTrainingData,keep_features))
 }
 
-FD_thresh = .3
+FD_thresh = .5
 subData <- read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
 subInfo <- subData %>% filter(exists==1 & motion_pass==1)
 # Make sure whole subj is removed
