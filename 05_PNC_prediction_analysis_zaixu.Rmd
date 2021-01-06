@@ -23,37 +23,39 @@ theme_set(theme_classic(base_family = "sans",base_size = font_size))
 theme_replace(axis.text=element_text(colour = "black",size = font_size))
 
 # Load al the data
-PNCData <- read.csv('/cbica/projects/alpraz_EI/input/PNC_sublist_FD.csv')
-demo<-read.csv('/cbica/projects/alpraz_EI/input/n9498_demographics_go1_20161212.csv')
-idemoQA <- read.csv('/cbica/projects/alpraz_EI/input/n1601_idemo_FinalQA_092817.csv')
-idemoBehavior <- read.csv('/cbica/projects/alpraz_EI/input/n1601_idemoBehavior_20151130.csv')
-health <- read.csv('/cbica/projects/alpraz_EI/input/n1601_health_with_meds_20170421.csv')
+PNCData <- read.csv('/cbica/projects/alpraz_EI/input/PNC_sublist_FD.csv') #PNC subjects ID and FD values.
+demo<-read.csv('/cbica/projects/alpraz_EI/input/n9498_demographics_go1_20161212.csv') #PNC demographics to get age and sex.
+idemoQA <- read.csv('/cbica/projects/alpraz_EI/input/n1601_idemo_FinalQA_092817.csv') #PNC QA metrics
+idemoBehavior <- read.csv('/cbica/projects/alpraz_EI/input/n1601_idemoBehavior_20151130.csv') #PNC behavior data (to get 'no response' counts--a measure of if they are paying attention/sleeping).
+health <- read.csv('/cbica/projects/alpraz_EI/input/n1601_health_with_meds_20170421.csv') #PNC Health exclusions.
 
-alpraz_info = read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
-alpraz_demo = read.csv('/cbica/projects/alpraz_EI/input/Alpraz_deographics.csv')
-alpraz_info <- alpraz_info %>% left_join(alpraz_demo,by=c("subid"="bblid", "sesid"="fmriid"))
+# alpraz_info = read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
+# alpraz_demo = read.csv('/cbica/projects/alpraz_EI/input/Alpraz_deographics.csv')
+# alpraz_info <- alpraz_info %>% left_join(alpraz_demo,by=c("subid"="bblid", "sesid"="fmriid"))
 
 # Get exclusions due to poor data quality and health data (low threshhold normal used here)
 FD_thresh <- .3 #threshold for mean FD
+# First join all dataframes together
 PNCData <- PNCData %>%
   left_join(demo,by = c("subid"="bblid"))%>%
   left_join(idemoBehavior,by=c("subid"="bblid"))%>%
   left_join(idemoQA,by = c("subid"="bblid"))%>%
   left_join(health, by = c("subid"="bblid"))%>%
-  mutate(FD_exclude = FD>FD_thresh)
-PNCData$exclusions <-  PNCData$ltnExcludev2==1 & 
-  PNCData$idemoExcludeVoxelwise==1 & 
-  PNCData$idemoRelMeanRMSMotionExclude==1 & 
-  PNCData$idemoRelMaxRMSMotionExclude==1 &
-  PNCData$FD_exclude==1
+  mutate(FD_exclude = FD>FD_thresh) # Identify subjs that exceed the FD threshold.
+# Now set exclusion values
+PNCData$exclusions <-  PNCData$ltnExcludev2==1 & #LTN exclude
+  PNCData$idemoExcludeVoxelwise==1 & #
+  PNCData$idemoRelMeanRMSMotionExclude==1 & # This should be the same as the FD cutoff
+  PNCData$idemoRelMaxRMSMotionExclude==1 & # Exclude subjects that exclude max motion cutoff from past PNC analyses
+  PNCData$FD_exclude==1 # Subs that exceed .3mm FD
 
 
 ```
 
 ```{r functions,echo=FALSE}
-# A number of functions that are used.
+# A few functions that are used.
 
-# This one just merges data.frames and deals with variable types, etc.
+# 1. This one just merges data.frames and deals with variable types, etc. The goal is just to prepare the data for the GAM model.
 data_mgmt <- function(fname){
   pred_results <- readRDS(fname)%>%
     left_join(PNCData,by = "subid")
@@ -69,7 +71,7 @@ data_mgmt <- function(fname){
   return(pred_results)
 }
 
-# This runs models and plots the outputs.
+# 2. This runs models and plots the outputs.
 plot_results <- function(pred_results,title_text){
   
   # This plot shows the number of drug vs placebo labels
