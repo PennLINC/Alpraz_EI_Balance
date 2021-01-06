@@ -174,7 +174,8 @@ plot_results(pred_results,"Schaefer400_All_Regions")
 PNC_filtered <- pred_results %>%
   filter(exclusions == 0)%>%
   mutate(sesid=sesid.x)%>%
-  select(subid,sesid,age,sex,FD,idemoBehAllEmoNrCount,distance)
+  select(subid,sesid,age,sex,FD,idemoBehAllEmoNrCount,distance)%>%
+  na.omit()
 write.table(x = PNC_filtered,file = '/cbica/projects/alpraz_EI/input/PNC_sublist_FD_age_distance_filter.csv',row.names = F,sep = ",")
 
 ```

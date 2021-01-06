@@ -1,4 +1,11 @@
 #!/bin/bash
+set -euo pipefail
+#$ -j y
+#$ -o /cbica/projects/alpraz_EI/output/job_output/
+#$ -e /cbica/projects/alpraz_EI/output/job_output/
+#$ -l h_vmem=50.5G,s_vmem=50.3G
+#$ -V
+#$ -cwd
 nCores=20
 sublist="/cbica/projects/alpraz_EI/input/PNC_sublist_FD_age_distance_filter.csv"
 
@@ -10,7 +17,7 @@ echo "subject FD sex age distance NRCount" > $cov_file
 
 mask="/cbica/projects/alpraz_EI/input/PNC_mask_thr995_reslice.nii.gz"
 
-sed 1d $sublist |while IFS=, read subid sesid age sex FD distance NRCount other; do
+sed 1d $sublist |while IFS=, read subid sesid age sex FD NRCount distance other; do
 	echo $subid $sesid
 
 	dataDir="/cbica/projects/alpraz_EI/data/PNC/IDEMO_ACOMPCOR_GSR/${subid}/${sesid}"

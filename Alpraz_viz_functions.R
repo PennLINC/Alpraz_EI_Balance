@@ -11,6 +11,7 @@ library(gratia)
 library(scales)
 # library(kableExtra)
 # library(RColorBrewer)
+source('tools/RainCloudPlots/tutorial_R/R_rainclouds.R')
 font_size <- 16
 theme_set(theme_classic(base_family = "sans",base_size = font_size))
 theme_replace(axis.text=element_text(colour = "black",size = font_size))
@@ -97,6 +98,8 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
         for_brainsmash <- rval_df %>% arrange(nums) %>% select(rvals)
         write.table(for_brainsmash,"/cbica/projects/alpraz_EI/output/brainsmash/input_files/schaefer400x7_aal_threshold_0.95_SVM_weights.txt",
                     row.names = F,col.names = F,sep=",")
+        
+        gene_comparisons(rval_df)
       }
       # Table
       sdf <- rval_df %>% group_by(community_name) %>% summarize(m = mean(rvals_abs)) %>% arrange(-m)
@@ -107,13 +110,13 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
         print(knitr::kable(sdf, caption = "Mean nodal sum(W) per community", floating.environment="sidewaystable"))
         community_plot <- ggplot(data = sdf, aes(x = reorder(community_name,-m), y = m, color = community_name,fill = community_name)) + 
           geom_col(show.legend = F) + scale_fill_brewer(type = "qual",palette = "Dark2") + scale_color_brewer(type = "qual",palette = "Dark2") +
-          ylab("Mean weight") + xlab('community')
+          ylab("Mean weight") + xlab('community') + theme(axis.text.x = element_text(angle = 90,hjust = 1))
         print(community_plot)
         
         print(knitr::kable(sdf_signed, caption = "Mean nodal signed sum(W) per community", floating.environment="sidewaystable"))
         community_plot_signed <- ggplot(data = sdf_signed, aes(x = reorder(community_name,-m), y = m, color = community_name,fill = community_name)) + 
           geom_col(show.legend = F) + scale_fill_brewer(type = "qual",palette = "Dark2") + scale_color_brewer(type = "qual",palette = "Dark2") +
-          ylab("Mean weight") + xlab('community')
+          ylab("Mean weight") + xlab('community')+ theme(axis.text.x = element_text(angle = 90,hjust = 1))
         print(community_plot_signed)
         
         p <- ggplot(data = rval_df,
@@ -134,158 +137,69 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
         g$y<-ordered(g$y,levels=colnames(commCC))
         grev<-g%>%map_df(rev)
         # Weight matrix
-        matplot <- ggplot(data=grev,
-                          aes(x=x,
-                              y=ordered(y,levels=rev(levels(y))),
-                              fill=vals))+ 
-          geom_tile(show.legend = T) +
-          scale_fill_gradient2(low = "blue",high = "red",mid="white",midpoint = 0) + labs(fill = "W (abs val)") +
-          theme(axis.text.x = element_text(angle = 90,hjust = 0),axis.title = element_blank(),legend.position = "bottom",axis.text = element_text(size = 5),plot.margin = unit(c(0, 0, 0, 0), "cm")) +
-          scale_x_discrete(position = "top")  + ggtitle(atlasname)
+        # matplot <- ggplot(data=grev,
+        #                   aes(x=x,
+        #                       y=ordered(y,levels=rev(levels(y))),
+        #                       fill=vals))+ 
+        #   geom_tile(show.legend = T) +
+        #   scale_fill_gradient2(low = "blue",high = "red",mid="white",midpoint = 0) + labs(fill = "W (abs val)") +
+        #   theme(axis.text.x = element_text(angle = 90,hjust = 0),axis.title = element_blank(),legend.position = "bottom",axis.text = element_text(size = 5),plot.margin = unit(c(0, 0, 0, 0), "cm")) +
+        #   scale_x_discrete(position = "top")  + ggtitle(atlasname)
         
-        # Chord plot
-        # chordDF <- g %>%
-        #   left_join(mat_labels,by = c("x"= "node_names")) %>%
-        #   left_join(mat_labels,by = c("y"= "node_names"),suffix=c("_x","_y")) %>%
-        #   select(community_name_x,community_name_y,vals)
-        # 
-        # col_fun=function(x) ifelse(x<0,"red","blue")
-        # grid.col = c(somatomotor = "#3281ab", 
-        #              visual = "#670068", 
-        #              dorsalAttention = "#007500", 
-        #              salienceVentralAttention = '#b61ad0', 
-        #              frontoparietalControl = "#d77d00", 
-        #              default = "#c1253c", 
-        #              limbic = '#f0f9b8',
-        #              AAL_subcortex = "black")
-        # colnames(chordDF)<-c('from','to','value')
-        # chord_plot <- chordDiagramFromDataFrame(chordDF,col = col_fun,grid.col = grid.col)
-        # title(atlasname)
-        
-        
-        comboplot_top<-cowplot::plot_grid(plotlist = list(matplot,p),align = "hv",axis = "bt",rel_widths = c(1,.25))
+        # comboplot_top<-cowplot::plot_grid(plotlist = list(matplot,p),align = "hv",axis = "bt",rel_widths = c(1,.25))
         # comboplot_bottom <- cowplot::plot_grid(plotlist = list(chord_plot,community_plot),align = "hv",axis = "bt",rel_widths = c(1,1))
-        comboplot<-cowplot::plot_grid(comboplot_top,community_plot,ncol = 1,rel_heights = c(1,.33))
-        # print(comboplot)
-        cowplot::save_plot(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_matrix.png",atlasname), 
-                           comboplot, base_height = 14, base_width = 10)
+        # comboplot<-cowplot::plot_grid(comboplot_top,community_plot,ncol = 1,rel_heights = c(1,.33))
+        # cowplot::save_plot(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_matrix.png",atlasname), 
+                           # comboplot, base_height = 14, base_width = 10)
         
         if (GABA == T) {
-          GABA_vals <- read.table(sprintf(
-            '/cbica/projects/alpraz_EI/input/atlases/GABRA1/GABRA1_%s_threshold_0.95_vals.csv',atlasname),
-            header = T)
-          GABA_mat_labels <- rval_df %>% left_join(GABA_vals,by = c("nums"="label"))
-          GABA_mat_labels$node_names <- GABA_mat_labels$names
-          GABA_mat_labels$GABRA1 <- GABA_mat_labels$value
-          GABA_mat_labels$SVM_weights <- GABA_mat_labels$rvals
-          GABA_mat_labels$absolute_SVM_weights <- GABA_mat_labels$rvals_abs
-          brainsmash(GABA_mat_labels,c("GABRA1","SVM_weights"))
-          brainsmash(GABA_mat_labels,c("GABRA1","absolute_SVM_weights"))
-          gaba_plot <- region_plots(df = GABA_mat_labels,var_name = "rvals",xlabel = "GABRA1")
-          print(gaba_plot)
-          
-          ### Edge-wise
-          # # Get one triangle
-          # triCC <- commCC
-          # triCC[upper.tri(commCC,diag = T)]=NA
-          # g$vals = c(triCC)
-          # gaba <- g %>% left_join(GABA_mat_labels%>% select(names,value),by = c("x"="names"))
-          # gaba <- gaba %>% left_join(GABA_mat_labels%>% select(names,value),by = c("y"="names"),suffix = c("x","y"))
-          # 
-          # g_half = gaba[!is.na(gaba$vals),]
-          # ggplot(data = g_half,aes(x=valuex,y=valuey,color=vals))+geom_point()
-          # gmod <- gam(vals ~ s(valuex,valuey,k=4),data=g_half)
-          # print(summary(gmod))
-          # print(draw(gmod))
-          # ggplot(g_half,aes(x=x,y=x))+geom_point()
-          # 
-          # gmod <- gam(abs(vals) ~ s(valuex,valuey,k=4),data=g_half)
-          # print(summary(gmod))
-          # gp <- gratia::draw(gmod)
-          # title <- ggdraw() +
-          #   draw_label(
-          #     "GABRA1 abolute W",
-          #     fontface = 'bold',
-          #     x = 0,
-          #     hjust = 0
-          #   ) 
-          # gpt<- cowplot::plot_grid(title,gp,ncol=1,rel_heights = c(.1,1))
-          # print(gpt)
-          
-          GABA2_vals <- read.table(sprintf(
-            '/cbica/projects/alpraz_EI/input/atlases/GABRA2/GABRA2_%s_threshold_0.95_vals.csv',atlasname),
-            header = T)
-          
-          GABA2_mat_labels <- rval_df %>% left_join(GABA2_vals,by = c("nums"="label"))
-          GABA2_mat_labels$node_names <- GABA2_mat_labels$names
-          GABA2_mat_labels$GABRA2 <- GABA2_mat_labels$value
-          GABA2_mat_labels$SVM_weights <- GABA2_mat_labels$rvals
-          GABA2_mat_labels$absolute_SVM_weights <- GABA2_mat_labels$rvals_abs
-          brainsmash(GABA2_mat_labels,c("GABRA2","SVM_weights"))
-          brainsmash(GABA2_mat_labels,c("GABRA2","absolute_SVM_weights"))
-          # browser()
-          # #write files for brainsmash spatial correlation as well:
-          # GABA_mat_labels$GABRA1 = GABA_mat_labels$value
-          # for_brainsmash <- GABA_mat_labels %>% arrange(nums) %>% select(GABRA1)
-          # write.table(for_brainsmash,"/cbica/projects/alpraz_EI/output/brainsmash/input_files/schaefer400x7_aal_threshold_0.95_GABRA1.txt",
-          #             row.names = F,col.names = F,sep=",")
-
-          gaba2_plot <- region_plots(df = GABA2_mat_labels,var_name = "rvals",xlabel = "GABRA2")
-          print(gaba2_plot)
-          
-          for (n in c(3,4,5,6)) {
+          cat("GABRA gene analysis....\n")
+          corr_vec <- vector(mode="double",length = 6)
+          for (n in c(1,2,3,4,5,6)) {
             GABA_vals <- read.table(sprintf(
               '/cbica/projects/alpraz_EI/input/atlases/GABRA%d/GABRA%d_%s_threshold_0.95_vals.csv',n,n,atlasname),
               header = T)
             
-            GABA2_mat_labels <- rval_df %>% left_join(GABA_vals,by = c("nums"="label"))
-            GABA2_mat_labels$node_names <- GABA2_mat_labels$names
-            GABA2_mat_labels$GABRA <- GABA2_mat_labels$value
-            colnames(GABA2_mat_labels)<- gsub(colnames(GABA2_mat_labels),pattern="GABRA",replacement = sprintf("GABRA%d",n))
-            GABA2_mat_labels$SVM_weights <- GABA2_mat_labels$rvals
-            GABA2_mat_labels$absolute_SVM_weights <- GABA2_mat_labels$rvals_abs
-            brainsmash(GABA2_mat_labels,c(sprintf("GABRA%d",n),"SVM_weights"))
-            brainsmash(GABA2_mat_labels,c(sprintf("GABRA%d",n),"absolute_SVM_weights"))
-            gaba2_plot <- region_plots(df = GABA2_mat_labels,var_name = "rvals",xlabel = sprintf("GABRA%d",n))
-            print(gaba2_plot)
+            GABA_mat_labels <- rval_df %>% left_join(GABA_vals,by = c("nums"="label"))
+            GABA_mat_labels$node_names <- GABA_mat_labels$names
+            GABA_mat_labels$GABRA <- GABA_mat_labels$value
+            colnames(GABA_mat_labels)<- gsub(colnames(GABA_mat_labels),pattern="GABRA",replacement = sprintf("GABRA%d",n))
+            GABA_mat_labels$SVM_weights <- GABA_mat_labels$rvals
+            GABA_mat_labels$absolute_SVM_weights <- GABA_mat_labels$rvals_abs
+            brainsmash(GABA_mat_labels,c(sprintf("GABRA%d",n),"SVM_weights"))
+            brainsmash(GABA_mat_labels,c(sprintf("GABRA%d",n),"absolute_SVM_weights"))
+            # gaba_plot <- region_plots(df = GABA_mat_labels,var_name = "rvals",xlabel = sprintf("GABRA%d",n))
+            # print(gaba_plot)
+            cortex = GABA_mat_labels %>% filter(!(community_name%in%c("AAL_subcortex")))
+            corr_vec[n] <- cor(cortex$SVM_weights,cortex$GABRA)
           }
-          
-          
-          bzrvals <- read.table(sprintf(
-            '/cbica/projects/alpraz_EI/input/atlases/bzr_atlas/bzr_%s_threshold_0.95_vals.csv',atlasname),
-            header = T)
-          bzr_mat_labels <- rval_df %>% left_join(bzrvals,by = c("nums"="label"))
-          bzr_plot <- region_plots(df = bzr_mat_labels,var_name = "rvals",xlabel = "BenzoR")
-          print(bzr_plot)
-         
-          # # Get one triangle
-          # triCC <- commCC
-          # triCC[upper.tri(commCC,diag = T)]=NA
-          # g$vals = c(triCC)
-          # g <- g %>% left_join(bzr_mat_labels%>% select(names,value),by = c("x"="names"))
-          # g <- g %>% left_join(bzr_mat_labels%>% select(names,value),by = c("y"="names"),suffix = c("x","y"))
-          # 
-          # g_half = g[!is.na(g$vals),]
-          # ggplot(data = g_half,aes(x=valuex,y=valuey,color=vals))+geom_point()
-          # gmod <- gam(vals ~ s(valuex,valuey,k=4),data=g_half)
-          # print(summary(gmod))
-          # print(draw(gmod))
-          # ggplot(g_half,aes(x=x,y=x))+geom_point()
-          # 
-          # gmod <- gam(abs(vals) ~ s(valuex,valuey,k=4),data=g_half)
-          # print(summary(gmod))
-          # gp <- gratia::draw(gmod)
-          # title <- ggdraw() +
-          #   draw_label(
-          #     "bzr abolute W",
-          #     fontface = 'bold',
-          #     x = 0,
-          #     hjust = 0
-          #   ) 
-          # gpt<- cowplot::plot_grid(title,gp,ncol=1,rel_heights = c(.1,1))
-          # print(gpt)
-          # 
-          # "/cbica/projects/alpraz_EI/input/atlases/bzr_atlas"
+          if (file.exists('surrogate_brainmap_corrs_GABRA3_map.txt')) {
+            x=data.table::rbindlist(lapply(list.files(pattern = glob2rx("surr*brainmap*GAB*.txt")), data.table::fread),idcol="GABRA")
+            names(x) <- c("GABRA", "r")
+            x<-x %>%
+              mutate(GABRA = factor(GABRA,levels = c(1,2,3,4,5,6),labels = c("GABRA1","GABRA2","GABRA3","GABRA4","GABRA5","GABRA6")),
+                     R2=r^2,
+                     source = "BrainSMASH null")
+            corr_df <- data.frame(GABRA = factor(c("GABRA1","GABRA2","GABRA3","GABRA4","GABRA5","GABRA6")),
+                                  r = corr_vec,
+                                  R2 = corr_vec^2,
+                                  source = "Observed")
+            x <- rbind(x,corr_df)
+
+            rc_plot <- ggplot(data=x,aes(x = GABRA,y = R2,color = source)) + 
+              geom_violin(show.legend = TRUE,alpha = .9,fill="black") +
+              # geom_point(aes(color=source,size=source,alpha=source),position = position_jitter(width = .1),show.legend = TRUE) +
+              # scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
+              # scale_size_manual(values = c(.25,3))+
+              # scale_alpha_manual(values = c(.25,1))+
+              ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+theme(legend.title = element_blank(),axis.title.x = element_blank())
+            
+            rc_plot <- rc_plot + geom_point(data=corr_df,aes(x=as.factor(GABRA),y=r2,color="red"),size=3,show.legend = TRUE) +
+              scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
+              theme(legend.title = NULL)
+            print(rc_plot)
+          }
+          cat("GABRA gene analysis complete \n")
         }
         
         if (transmodality == T){
@@ -362,51 +276,6 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
           g <- g %>% left_join(mat_labels%>% select(node_names,transmodality),by = c("x"="node_names"))
           g <- g %>% left_join(mat_labels%>% select(node_names,transmodality),by = c("y"="node_names"),suffix = c("x","y"))
 
-          # gmoda <- gam(vals ~ s(transmodalityx,transmodalityy,k=4),data=g)
-          # print(summary(gmoda))
-          # gpa <- gratia::draw(gmoda)
-          # title <- ggdraw() +
-          #   draw_label(
-          #     "transmodality W symmetric",
-          #     fontface = 'bold',
-          #     x = 0,
-          #     hjust = 0
-          #   ) 
-          # gpta<- cowplot::plot_grid(title,gpa,ncol=1,rel_heights = c(.1,1))
-          # # print(gpta)
-          # # get the upper triangle
-          # triCC <- newCC
-          # triCC[upper.tri(newCC,diag = T)]=NA
-          # g$vals = c(triCC)
-          # 
-          # g_half = g[!is.na(g$vals),]
-          # ggplot(data = g_half,aes(x=transmodalityx,y=transmodalityy,color=vals))+geom_point()
-          # 
-          # gmod <- gam(vals ~ s(transmodalityx,transmodalityy,k=4),data=g_half)
-          # print(summary(gmod))
-          # gp <- gratia::draw(gmod)
-          # title <- ggdraw() +
-          #   draw_label(
-          #     "transmodality W",
-          #     fontface = 'bold',
-          #     x = 0,
-          #     hjust = 0
-          #   ) 
-          # gpt<- cowplot::plot_grid(title,gp,ncol=1,rel_heights = c(.1,1))
-          # # print(gpt)
-          # gmod <- gam(abs(vals) ~ s(transmodalityx,transmodalityy,k=4),data=g_half)
-          # print(summary(gmod))
-          # gp <- gratia::draw(gmod)
-          # title <- ggdraw() +
-          #   draw_label(
-          #     "transmodality absolute W",
-          #     fontface = 'bold',
-          #     x = 0,
-          #     hjust = 0
-          #   ) 
-          # gpt<- cowplot::plot_grid(title,gp,ncol=1,rel_heights = c(.1,1))
-          # # print(gpt)
-          
           comboplot<-cowplot::plot_grid(plotlist = list(matplot,dotplot),ncol=1,align = "hv",axis = "lr",rel_heights = c(1,.66))
           ggdraw(comboplot)
           # print(comboplot)
@@ -544,7 +413,7 @@ vec2surface <- function(schaefer_df,val_name,file_prefix){
 
 region_plots <- function(df,var_name,xlabel){
   ## signed plots ##
-  cat(sprintf('\n## Signed t-statistic for %s\n',xlabel))
+  cat(sprintf('\n## Signed W for %s\n',xlabel))
   # all regions
   r=cor.test(df[,var_name],df$value,method = "pearson")
   
@@ -579,7 +448,7 @@ region_plots <- function(df,var_name,xlabel){
   subcortical_plot <- subcortical_plot+theme(legend.position = "none")
   
   ## Absolute value ##
-  cat(sprintf('\n## Absolute t-statistic for %s\n',xlabel))
+  cat(sprintf('\n## Absolute W for %s\n',xlabel))
   # all regions
   var_name = sprintf("%s_abs",var_name)
   r=cor.test(df[,var_name],df$value,method = "pearson")
@@ -660,7 +529,65 @@ brainsmash <- function(df,var_names){
 
 }
 
-display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,result_fname=NULL){
+gene_comparisons <- function(df){
+  gene_labels <- read.table('/cbica/projects/alpraz_EI/input/atlases/genes.csv',sep = ",",header = T)%>%
+    mutate(entrezgene_id = as.character(entrezgene_id))
+  load('/cbica/projects/alpraz_EI/input/atlases/AHBA_vertex_Schaefer4007order.RData')
+  # rh_genes=rh_genes_mirr
+  # lh_genes = lh_genes_mirr
+  rm(rh_genes_mirr,lh_genes_mirr)
+  #Tidy up left hemi names
+  colnames(lh_genes)<- gsub(colnames(lh_genes),pattern = "7Networks_",replacement = "")
+  colnames(lh_genes)<- gsub(colnames(lh_genes),pattern = "Default_pCun",replacement = "Default_")
+  colnames(lh_genes)<- gsub(colnames(lh_genes),pattern = "FrOperIns",replacement = "FrOper")
+  
+  #Tidy up right hemi names
+  colnames(rh_genes)<- gsub(colnames(rh_genes),pattern = "7Networks_",replacement = "")
+  colnames(rh_genes)<- gsub(colnames(rh_genes),pattern = "Default_pCun",replacement = "Default_")
+  colnames(rh_genes)<- gsub(colnames(rh_genes),pattern = "FrOperIns",replacement = "FrOper")
+  colnames(rh_genes)<- gsub(colnames(rh_genes),pattern = "Default_PFCdPFCm",replacement = "Default_PFCm")
+  
+  genes <- cbind(lh_genes,rh_genes)
+  column_idx <- colnames(genes) %in% df$names
+  genes_idxed <- genes[,column_idx]
+  genes_t <- as.data.frame(t(genes_idxed))
+  genes_t$names <- rownames(genes_t)
+  
+  genes_t_joined <- genes_t %>% left_join(df %>%
+                                            select(names,rvals,rvals_abs),
+                                          by = "names")
+  rm(lh_genes,rh_genes,genes_idxed,genes_t)
+  
+  genes <- as.matrix(genes_t_joined %>%
+                       select(-rvals,-rvals_abs,-names))
+  W_vals <- as.matrix(genes_t_joined %>%
+                        select(rvals,rvals_abs))
+  cc <- cor(genes,W_vals[,"rvals"])
+  cc_abs <- cor(genes,W_vals[,"rvals_abs"])
+  cc_df <- data.frame(cc=cc,label=row.names(cc)) %>% 
+    arrange(cc) %>%
+    left_join(gene_labels,by = c("label"="entrezgene_id"))%>%
+    mutate(hgnc_symbol=as.character(hgnc_symbol))
+  cc_abs_df <- data.frame(cc=cc_abs,label=row.names(cc)) %>% 
+    arrange(cc)%>%
+    left_join(gene_labels,by = c("label"="entrezgene_id"))
+  GABRA_corrs <- cc_df$cc[str_detect(cc_df$hgnc_symbol,"GABRA")]
+  GABRA_corrs <- GABRA_corrs[!is.na(GABRA_corrs)]
+  GABRA_labs <- cc_df$hgnc_symbol[str_detect(cc_df$hgnc_symbol,"GABRA")]
+  GABRA_labs <- as.character(GABRA_labs[!is.na(GABRA_labs)])
+  GABRA_ps <- sapply(GABRA_corrs,FUN = function(x) sum(abs(cc_df$cc)>abs(x))/length(cc_df$cc))
+  print(rbind(GABRA_labs,GABRA_corrs,GABRA_ps))
+
+  outplot<-ggplot(cc_df,aes(x=cc)) + geom_histogram() + geom_vline(xintercept = GABRA_corrs) +
+    annotate(geom="text",x=GABRA_corrs,y=10,label = GABRA_labs)
+  
+  print(outplot)
+  print(knitr::kable(cc_df%>%head(50)))
+  print(knitr::kable(cc_df%>%tail(50)))
+
+}
+
+display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,result_fname=NULL,results=NULL){
   cat(sprintf("\n## Displaying classification results for %s atlas (classifier = %s)\n",atlasname,classifier))
   
   # df_acc <- read.csv(sprintf('/cbica/projects/alpraz_EI/output/drug_classification/%s_results_%s.csv',GSR,classifier))
@@ -668,16 +595,17 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
   #   geom_point()+
   #   ggtitle(sprintf("Accuracy for %s %s classification",GSR,classifier))
   # print(acc_plot)
-  
-  if (!is.null(result_fname)) {
-    results <- readRDS(result_fname)
-  } else {
-    if (perm_results == T){
-      results <- readRDS(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_%s_1_permute_on_results.rds",
-                                 atlasname,GSR,classifier))
-    }else {
-      results <- readRDS(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_all_%s_1_permute_off_results.rds",
-                                 atlasname,GSR,classifier))
+  if (is.null(results)) {
+    if (!is.null(result_fname)) {
+      results <- readRDS(result_fname)
+    } else {
+      if (perm_results == T){
+        results <- readRDS(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_%s_1_permute_on_results.rds",
+                                   atlasname,GSR,classifier))
+      }else {
+        results <- readRDS(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_all_%s_1_permute_off_results.rds",
+                                   atlasname,GSR,classifier))
+      }
     }
   }
   
@@ -685,16 +613,13 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
   cat("Results for exact binomial test:\n")
   print(b)
   
-  
-  
   # Look at W coefs
   W <- results[[2]]
   if (atlasname=="schaefer400x7_aal") {
-    feat_mat_obj <- feat2mat(W,atlasname,community_summary = T,GABA=T,transmodality = T,surface = T)
+    feat_mat_obj <- feat2mat(W,atlasname,community_summary = T,GABA=T,transmodality = F,surface = T)
   } else{
     feat_mat_obj <- feat2mat(W,atlasname,community_summary = T,GABA=T,transmodality = T)
   }
-  feat_mat_obj <- feat2mat(W,atlasname,community_summary = T,GABA=T,transmodality = T)
   Wmap <- feat_mat_obj$feat_mat
   comm_ranks <- feat_mat_obj$community_ranks
   # c1 <- corrplot::corrplot(Wmap,is.corr = F, method = "color",na.label = "square",title = sprintf("%s W coefficients",atlasname),
@@ -776,7 +701,7 @@ get_derivs_and_plot <- function(modobj,smooth_var,low_color=NULL,hi_color=NULL){
       scale_fill_gradient2(low = "steelblue", midpoint = 0, mid = "white",
                            high = "firebrick",limits = c(min(derv$derivative),max(derv$derivative)))
   }
-  
+
   d1 <- d1 + 
     labs(x = smooth_var,fill = sprintf("\u0394%s",smooth_var)) + 
     theme(axis.title.y = element_blank(),
@@ -899,7 +824,7 @@ visualize_model <- function(modobj,smooth_var, int_var = NULL ,group_var = NULL,
         p1<- p1 + geom_line(aes_string(group = group_var),alpha = .5)
       }
       p1 <- p1 +
-        scale_color_gradientn(colors = c(low_color,high_color), values = cbar_vals,name = "") +
+        scale_color_gradientn(colors = c(low_line,"grey90",high_line), values = cbar_vals,name = "") +
         geom_ribbon(data = pred,aes_string(x = smooth_var , ymin = "selo",ymax = "sehi", fill = "lab"),alpha = .3, linetype = 0) +
         scale_fill_manual(values = c(high_color,low_color)) +
         geom_line(data = pred,aes_string(x = smooth_var, y = "fit",group = "lab"),size = line_size) +
@@ -1035,17 +960,21 @@ visualize_model <- function(modobj,smooth_var, int_var = NULL ,group_var = NULL,
       }
 
       pg<-cowplot::plot_grid(rel_heights = c(16*num_levels,rep(num_levels,num_levels-1),2*num_levels),plotlist = plotlist,align = "v",axis = "lr",ncol = 1)
-      final_plot <- cowplot::plot_grid(pg,legend,rel_heights = c(1,.1),ncol = 1)
+      # final_plot <- cowplot::plot_grid(pg,legend,rel_heights = c(1,.1),ncol = 1)
+      final_plot <- pg
       print(final_plot)
     } else {
       # No need to split
       d1 <- get_derivs_and_plot(modobj = modobj,smooth_var = smooth_var)
       scatter <- list(p1)
       bar <- list(d1+theme(legend.position = "none"))
-      legend <- get_legend(d1)
+      legend <- get_legend(d1+theme(legend.position = "bottom",legend.direction = "horizontal"))
       allplots <- c(scatter,bar)
-      pg<-cowplot::plot_grid(rel_heights = c(1,.15),plotlist = allplots,align = "v",axis = "lr",ncol = 1)
+      pg<-cowplot::plot_grid(rel_heights = c(1,.35),plotlist = allplots,align = "v",axis = "lr",ncol = 1)
       final_plot <- cowplot::plot_grid(pg,legend,rel_heights = c(1,.1),ncol = 1)
+      print(final_plot)
+      final_plot=pg
+      
       # print(final_plot)
     }
     
@@ -1070,5 +999,5 @@ visualize_model <- function(modobj,smooth_var, int_var = NULL ,group_var = NULL,
                 a.hist = list(bins = 10))
     print(cp)
   }
-  # return(final_plot)
+  return(final_plot)
 }

@@ -1,0 +1,206 @@
+---
+title: "PNC alpraz model predictions analysis for Zaixu"
+author: "Bart"
+date: "1/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(sjPlot)
+library(mgcv)
+library(broom)
+library(lme4)
+# library(lmerTest)
+library(purrr)
+require(ggplot2)
+library(cowplot)
+require(dplyr)
+knitr::opts_chunk$set(fig.height = 6,fig.width = 5,echo = F,warning = FALSE)
+source("Alpraz_viz_functions.R")
+font_size <- 16
+theme_set(theme_classic(base_family = "sans",base_size = font_size))
+theme_replace(axis.text=element_text(colour = "black",size = font_size))
+
+# Load al the data
+PNCData <- read.csv('/cbica/projects/alpraz_EI/input/PNC_sublist_FD.csv')
+demo<-read.csv('/cbica/projects/alpraz_EI/input/n9498_demographics_go1_20161212.csv')
+idemoQA <- read.csv('/cbica/projects/alpraz_EI/input/n1601_idemo_FinalQA_092817.csv')
+idemoBehavior <- read.csv('/cbica/projects/alpraz_EI/input/n1601_idemoBehavior_20151130.csv')
+health <- read.csv('/cbica/projects/alpraz_EI/input/n1601_health_with_meds_20170421.csv')
+
+alpraz_info = read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
+alpraz_demo = read.csv('/cbica/projects/alpraz_EI/input/Alpraz_deographics.csv')
+alpraz_info <- alpraz_info %>% left_join(alpraz_demo,by=c("subid"="bblid", "sesid"="fmriid"))
+
+# Get exclusions due to poor data quality and health data (low threshhold normal used here)
+FD_thresh <- .3 #threshold for mean FD
+PNCData <- PNCData %>%
+  left_join(demo,by = c("subid"="bblid"))%>%
+  left_join(idemoBehavior,by=c("subid"="bblid"))%>%
+  left_join(idemoQA,by = c("subid"="bblid"))%>%
+  left_join(health, by = c("subid"="bblid"))%>%
+  mutate(FD_exclude = FD>FD_thresh)
+PNCData$exclusions <-  PNCData$ltnExcludev2==1 & 
+  PNCData$idemoExcludeVoxelwise==1 & 
+  PNCData$idemoRelMeanRMSMotionExclude==1 & 
+  PNCData$idemoRelMaxRMSMotionExclude==1 &
+  PNCData$FD_exclude==1
+
+
+```
+
+```{r functions,echo=FALSE}
+# A number of functions that are used.
+
+# This one just merges data.frames and deals with variable types, etc.
+data_mgmt <- function(fname){
+  pred_results <- readRDS(fname)%>%
+    left_join(PNCData,by = "subid")
+  pred_results$oPred <- ordered(pred_results$pred,levels=c(-1,1),labels=c("Placebo","Drug")) #-1 is placebo, 1 is drug.
+  pred_results<-pred_results%>%
+    mutate(age = ageAtCnb1/12,age2=age^2,
+           oSex = ordered(sex,levels=c(1,2),labels=c("male","female")),
+           oRace = ordered(race2),
+           fRace = factor(race2),
+           weights = 1/FD,
+           distance = as.numeric(distance),
+           nPred = as.numeric(pred==1)) #Note Drug is now 1 and placebo is now 0 (for ease of visualization)
+  return(pred_results)
+}
+
+# This runs models and plots the outputs.
+plot_results <- function(pred_results,title_text){
+  
+  # This plot shows the number of drug vs placebo labels
+  bar_plot<-ggplot(data = pred_results,aes(x=oPred,fill=oPred)) +
+    geom_bar(stat="count",show.legend = F)+
+    scale_fill_brewer(type = "qual",palette = "Set1")+xlab("")
+  
+  # This shows how they are distributed over age
+  dens_plot <- ggplot(data = pred_results,aes(x=age,fill=oPred)) +
+    geom_density(alpha=.5,show.legend = T) +
+    scale_fill_brewer(type = "qual",palette = "Set1") +
+    theme(legend.position = c(.2,1),legend.title = element_blank(),legend.background = element_blank(),legend.direction = "horizontal",
+          axis.text = element_blank(),axis.ticks = element_blank(),axis.title = element_blank(),axis.line = element_blank())
+
+  # We can fit the models as lm/glm or as gam. Both are done here, but we only use GAM for the final results.
+  
+  # First we fit logistic regression with the hard classifier labels as outcome.
+  cat("\nLinear logistic regression\n")
+  mylogit <- glm(nPred ~age + oSex +FD + idemoBehAllEmoNrCount , data = pred_results, family = "binomial",
+                 subset = exclusions==0)
+  print(summary(mylogit))
+  # tab_model(mylogit)
+  glmplot <-sjPlot::plot_model(mylogit,type = "pred",terms = "age",
+                       axis.title = c("Age","Probability of Drug"),show.data = F,title = "Linear Fit")+theme(plot.title = element_blank())
+  
+  cat("\nGAM fit\n")
+  # GAM
+  mygam <- gam(nPred ~s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount, data = pred_results, family = "binomial",
+                 subset = exclusions==0)
+  print(summary(mygam))
+  gam_logistic_plot <- sjPlot::plot_model(mygam,type = "pred",terms = "age",
+                       show.data = F,title = "GAM Fit")+ylab("Probability of Drug")+xlab("Age (years)")+theme(plot.title = element_blank())
+  
+  
+  titleplot <- ggdraw() + 
+  draw_label(title_text,fontface = 'bold', x = 0, hjust = 0) +
+    theme(plot.margin = margin(0, 0, 0, 7))
+  
+  # Next we use distance from the classification hyperplane, a continuous measure, as the outcome. Fit as lm and gam.
+  cat("\nDistance\n")
+  pred_results$Distance = as.numeric(pred_results$distance)
+  dist_bar_plot<-ggplot(data = pred_results,aes(x=Distance,fill=oPred)) +
+  geom_histogram(bins = 30) +
+  scale_fill_brewer(type = "qual",palette = "Set1")+
+  theme(legend.title = element_blank(),legend.position = c(.8,.5),plot.title = element_blank(),axis.text = element_text(size=font_size))
+
+  mylm <- lm(Distance ~age + oSex +FD+ idemoBehAllEmoNrCount, data = pred_results,
+                 subset = exclusions==0)
+  print(summary(mylm))
+  DistGLM <-sjPlot::plot_model(mylm,type = "pred",terms = "age",
+                       axis.title = c("Age","Distance"),show.data = T,title = "Linear Fit")
+  
+  # GAM
+  cat("\nGAM\n")
+  mygam <- gam(Distance ~s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount, data = pred_results,
+                 subset = exclusions==0)
+  print(summary(mygam))
+  
+  DistGAM <- visualize_model(mygam,smooth_var = "age",int_var = NULL,group_var = NULL,derivative_plot = T)
+  
+  # Compile the plots and display
+  left1=cowplot::plot_grid(plotlist = list(bar_plot,dist_bar_plot),ncol = 1,greedy = T)
+  glmcombo = cowplot::plot_grid(plotlist = list(dens_plot,glmplot),
+                                ncol = 1,axis = "lr",align = "v",rel_heights = c(.13,1),greedy = T)
+  gamcombo = cowplot::plot_grid(plotlist = list(dens_plot,gam_logistic_plot),
+                                ncol = 1,axis = "lr",align = "v",rel_heights = c(.4,1),greedy = T)
+  ggdraw(add_sub(gamcombo, "Annotation inside plot", vpadding=grid::unit(0, "lines"),
+       y = 0, x = 14, hjust = 0))
+  mid=cowplot::plot_grid(plotlist = list(gamcombo,DistGAM),greedy = T,ncol = 1,nrow=2)
+  # bottom1=cowplot::plot_grid(plotlist = list(dist_bar_plot),nrow = 1,ncol = 1,greedy = T)
+  bottom2=cowplot::plot_grid(plotlist = list(DistGLM,DistGAM),nrow = 1,greedy = T)
+  all <- cowplot::plot_grid(plotlist = list(left1,mid),ncol = 2,greedy = T,rel_widths = c(1,1))
+  cowplot::ggsave2(filename = sprintf("figs/%s.svg",title_text),plot = all,device = "svg")
+  print(all)
+}
+```
+
+## Schaefer 400
+Results when using all the schaefer 400 regions.  
+
+```{r 400,fig.height=3, fig.width=5, warning=FALSE}
+pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_all.rds')
+plot_results(pred_results,"Schaefer400_All_Regions")
+```
+
+## Transmodality 
+Looking at the classification models trained on transmodal connections only (top 25% transmodal areas to the rest of the brain).  
+
+### Schaefer 400 transmodal
+
+```{r trans 400}
+pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_transmodal25.rds')
+plot_results(pred_results,"Schaefer400_Transmodality")
+
+pred_a_400 = pred_results #save these for use later
+```
+
+### Schaefer 400 unimodal
+
+```{r uni 400}
+pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_unimodal25.rds')
+plot_results(pred_results,"Schaefer400_Unimodal")
+
+pred_s_400 = pred_results #save these for use later
+```
+
+### Age*Classifier  
+Looking at age*model interactions. We want to test the hypothesis that transmodal areas are undergoing the most pronounced E:I development in this age range. So, we test whether the transmodal model will produce labels (or distance values) that are more associated with age than the unimodal classification model.  
+
+```{r sens_assoc diff,fig.height=8,fig.width=8}
+
+######## 400 #########
+cat("s400\n")
+pred_a_400 <- pred_a_400 %>%
+  mutate(a_distance=distance,
+         a_nPred = nPred,
+         transmodal_classifier = decisionValues) # Renaming variables
+
+pred_s_400 <- pred_s_400 %>%
+  mutate(s_distance=distance,
+         s_nPred = nPred,
+         unimodal_classifier = decisionValues) # Renaming variables
+pred_join_400 <- pred_a_400 %>%
+  left_join(pred_s_400,by=c("subid","age","FD","oSex","idemoBehAllEmoNrCount"))%>%
+  pivot_longer(cols = c(transmodal_classifier,unimodal_classifier),names_to = "subdivision",values_to = "Distance") #Joining together
+
+# Fit as GAM
+pred_join_400$oSubdivision = ordered(pred_join_400$subdivision,levels = c("unimodal_classifier","transmodal_classifier"))
+gmod <-mgcv::gamm(Distance ~ oSex+FD+idemoBehAllEmoNrCount+ s(age,k=4) + oSubdivision + s(age,by = oSubdivision,k=4),
+                  data = pred_join_400,random=list(subid=~1))
+summary(gmod$gam)
+visualize_model(modobj = gmod,smooth_var = "age",int_var = "oSubdivision",group_var = NULL,derivative_plot = T)
+
+```
