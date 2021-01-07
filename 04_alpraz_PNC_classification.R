@@ -200,63 +200,6 @@ SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
   return(svm_results)
 }
 
-RF_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
-  # Random forest classifier
-  
-  # set up folds for CV
-  if (folds == "LOO") {
-    num_folds = length(unique(df$subid))
-  } else {
-    num_folds = folds
-  }
-  foldIdxs <- data.frame(subid=unique(df$subid))
-  foldIdxs$foldID <- row_number(foldIdxs$subid)
-  foldIdxs$foldID <- ntile(foldIdxs$foldID,num_folds)
-  # foldIdxs$subid <- sample(foldIdxs$subid)
-  pred_data<-setNames(data.frame(matrix(ncol = 4, nrow = 0)), c("subid", "sesid", "drug","model.pred"))
-  
-  W = matrix(nrow = num_folds,ncol = length(4:dim(df)[2]))
-  colnames(W)<-colnames(df)[4:dim(df)[2]]
-  
-  # Loop over folds
-  for (fold in 1:num_folds) {
-    #training data
-    trainingIDs <- as.matrix(foldIdxs %>% filter(foldID != fold) %>% select(subid))
-    trainingIndex <- df$subid %in% trainingIDs # indices for training subs
-    trainingData <- trainingData <- df[trainingIndex, 3:dim(df)[2] ] # Training data. Take columns 3:end (Removes subid and sesid).
-    
-    #testing data
-    testData <- df[!trainingIndex, 4:dim(df)[2]] # test data. Take columns 4:end (Removes subid sesid drug).
-    testLabels <- data.frame(df[!trainingIndex,c(1:3) ]) # Labels for test data
-    
-    #feature extraction if needed
-    if (feature_selection == TRUE) {
-      feature_extracted_data <- featureExtraction(trainingData,feature_proportion = feature_proportion)
-      trainingData <- feature_extracted_data[[1]]
-      feature_names <- feature_extracted_data[[2]]
-      
-      testData <- testData %>% select(feature_names)
-      cat(sprintf("Retained %d features\n",length(feature_names)))
-    }
-    
-    # randomForest
-    x <- as.matrix(trainingData[, 2:dim(trainingData)[2]])
-    y <- as.factor(as.matrix(trainingData[,1]))
-    rf.model <- randomForest(x = x, y = y,importance = T,mtry = 2*sqrt(dim(x)[2]))
-    rf.pred <- predict(rf.model, as.matrix(testData))
-    
-    imp <- importance(rf.model)
-    W[fold,colnames(x)] <- imp[,"MeanDecreaseAccuracy"]
-    
-    testLabels$model.pred = rf.pred
-    # print(sprintf("Fold %d, acc = %1.3f",fold,sum(testLabels$drug==testLabels$model.pred)/nrow(testLabels)))
-    pred_data <- rbind(pred_data,testLabels)
-    
-  }
-  rf_results <- list(pred_data,W)
-  return(rf_results)
-}
-
 run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,permutation_test = F, num_permutations = 10000,type = "svm"){
   ## This sends the data to the desired classifier and other functions
   if (feature_selection == T) {
@@ -266,11 +209,9 @@ run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,per
   if (type == "svm") {
     print("Performing classification using SVM")
     model_results <- SVM_2class(df,folds,feature_selection = feature_selection,feature_proportion = feature_proportion)
-  }else if (type == "rf") {
-    print("Performing classification using Random Forest")
-    model_results <- RF_2class(df,folds,feature_selection = feature_selection,feature_proportion = feature_proportion)
-  }
-  pred_data <- model_results[[1]]
+  } # No other types for now
+  
+  prediction_output <- model_results[[1]]
   # W_folds <- model_results[[2]]
   W<-model_results[[2]]
   svm.model <- model_results[[3]]
@@ -282,10 +223,14 @@ run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,per
   } else{
     W <- W
   }
-  
-  accuracy <- sum(pred_data$model.pred==pred_data$drug)/dim(pred_data)[1]
-  b <- binom.test(sum(pred_data$model.pred==pred_data$drug),dim(pred_data)[1],.5)
-  b$pred_data <- pred_data
+  accuracy_fun <- function(x) sum(x$model.pred==x$drug)/dim(x)[1]
+  accuracies <- sapply(prediction_output,accuracy_fun)
+  # accuracy <- sum(pred_data$model.pred==pred_data$drug)/dim(pred_data)[1]
+
+  # b <- binom.test(sum(pred_data$model.pred==pred_data$drug),dim(pred_data)[1],.5)
+  accuacy <- mean(accuracies)
+  b <- binom.test(accuracy,.5)
+  b$pred_data <- prediction_output
   
   if (permutation_test == T) {
     print(sprintf("Permuting %d times...",num_permutations))
