@@ -2,7 +2,7 @@
 require(ggplot2)
 require(dplyr)
 library(e1071)
-library(ROCR)
+# library(ROCR)
 library(randomForest)
 library(matrixTests)
 library(doParallel)
@@ -125,10 +125,41 @@ extract_matrix2 <- function(subid,sesid,atlasname,gsr,subdivide=F, subdivision=N
   return(vals)
 }
 
+CV_function <- function(sublist,df,num_folds){
+  foldIdxs <- data.frame(subid=sublist)
+  foldIdxs$foldID <- row_number(foldIdxs$subid)
+  foldIdxs$foldID <- ntile(foldIdxs$foldID,num_folds)
+  fold_output<-vector(mode = "list",length = num_folds)
+  for (fold in 1:num_folds) {
+    trainingIDs <- as.matrix(foldIdxs %>% filter(foldID != fold) %>% select(subid))
+    trainingIndex <- df$subid %in% trainingIDs # indices for training subs
+    trainingData <- df[trainingIndex, 3:dim(df)[2] ]
+    testData <- df[!trainingIndex, 4:dim(df)[2]] # test data. Take columns 4:end (Removes subid sesid drug).
+    testLabels <- data.frame(df[!trainingIndex,c(1:3) ])
+    # svm
+    x <- as.matrix(trainingData[, 2:dim(trainingData)[2]])
+    y <- as.factor(as.matrix(trainingData[,1]))
+    svm.model <- svm(x =x, y = y, 
+                     cost = 1, kernel = "linear",type = "C-classification",scale = F)
+    svm.pred <- predict(svm.model, as.matrix(testData))
+    
+    # W[fold,colnames(x)] <- t(svm.model$coefs) %*% svm.model$SV
+    # w <- t(svm.model$coefs) %*% svm.model$SV
+    # num_features <- dim(x)[2]
+    decisionValues <- w %*% t(testData)-svm.model$rho
+    distance <- decisionValues/norm(w)
+    testLabels$decisionValues <- t(decisionValues)
+    testLabels$distance <- t(distance)
+    testLabels$model.pred = svm.pred
+    fold_output[[fold]]<-testLabels
+  }
+  pred_out <- data.table::rbindlist(fold_output)
+  return(pred_out)
+}
 
 SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
   #SVM 2-class classifier
-  
+  cat('\nRunning SVM models.....')
   # set up folds for CV
   if (folds == "LOO") {
     num_folds = length(unique(df$subid))
@@ -137,38 +168,26 @@ SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
     num_folds = folds
     num_repetitions <- 100
   }
-  output_list = list()
+  cat(sprintf('\nRunning %d-fold CV %d times...',num_folds,num_repetitions))
+  svm_output <- vector(mode = "list",length = num_repetitions)
+  
+  unique_IDs <- unique(df$subid)
+  subid_folds <- replicate(num_repetitions,sample(unique_IDs,size = length(unique_IDs)))
+  foldIdxs <- data.frame(subid=unique_IDs)
+  foldIdxs$foldID <- row_number(foldIdxs$subid)
+  foldIdxs$foldID <- ntile(foldIdxs$foldID,num_folds)
+  cat('Sending data to CV')
   for (r in 1:num_repetitions) {
-    foldIdxs <- data.frame(subid=unique(df$subid))
-    foldIdxs$foldID <- row_number(foldIdxs$subid)
-    foldIdxs$foldID <- ntile(foldIdxs$foldID,num_folds)
-    foldIdxs$subid <- sample(foldIdxs$subid)
-    pred_data<-setNames(data.frame(matrix(ncol = 4, nrow = 0)), c("subid", "sesid", "drug","model.pred"))
-    
-    # W = matrix(nrow = num_folds,ncol = length(4:dim(df)[2]))
-    # colnames(W)<-colnames(df)[4:dim(df)[2]]
-    
-    # Loop over folds
+    foldIdxs$subid <- subid_folds[,r]
+    fold_output<-vector(mode = "list",length = num_folds)
+    cat(sprintf('\nrepetition  %d.... ',r))
     for (fold in 1:num_folds) {
-      #training data
+      cat(sprintf('\nflold  %d.... ',fold))
       trainingIDs <- as.matrix(foldIdxs %>% filter(foldID != fold) %>% select(subid))
       trainingIndex <- df$subid %in% trainingIDs # indices for training subs
-      trainingData <- df[trainingIndex, 3:dim(df)[2] ] # Training data. Take columns 3:end (Removes subid and sesid).
-      
-      #testing data
+      trainingData <- df[trainingIndex, 3:dim(df)[2] ]
       testData <- df[!trainingIndex, 4:dim(df)[2]] # test data. Take columns 4:end (Removes subid sesid drug).
-      testLabels <- data.frame(df[!trainingIndex,c(1:3) ]) # Labels for test data
-      
-      #feature extraction if needed
-      if (feature_selection == TRUE) {
-        feature_extracted_data <- featureExtraction(trainingData,feature_proportion = feature_proportion)
-        trainingData <- feature_extracted_data[[1]]
-        feature_names <- feature_extracted_data[[2]]
-        
-        testData <- testData %>% select(feature_names)
-        cat(sprintf("Retained %d features\n",length(feature_names)))
-      }
-      
+      testLabels <- data.frame(df[!trainingIndex,c(1:3) ])
       # svm
       x <- as.matrix(trainingData[, 2:dim(trainingData)[2]])
       y <- as.factor(as.matrix(trainingData[,1]))
@@ -178,24 +197,27 @@ SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
       
       # W[fold,colnames(x)] <- t(svm.model$coefs) %*% svm.model$SV
       w <- t(svm.model$coefs) %*% svm.model$SV
-      num_features <- dim(x)[2]
+      # num_features <- dim(x)[2]
       decisionValues <- w %*% t(testData)-svm.model$rho
       distance <- decisionValues/norm(w)
       testLabels$decisionValues <- t(decisionValues)
       testLabels$distance <- t(distance)
       testLabels$model.pred = svm.pred
-      pred_data <- rbind(pred_data,testLabels)
+      fold_output[[fold]]<-testLabels
     }
-    output_list[[r]]=pred_data
+    svm_output[[r]] <- data.table::rbindlist(fold_output)
+    cat('complete\n')
   }
-  
+  # output_list <- apply(subid_folds,CV_function,df=df,num_folds = num_folds,MARGIN = 2)
+
   final_data<-df[, 3:dim(df)[2] ]
   x <- as.matrix(final_data[, 2:dim(final_data)[2]])
   y <- as.factor(as.matrix(final_data[,1]))
-  svm.model <- svm(x =x, y = y, 
+  svm.model <- svm(x = x, y = y, 
                    cost = 1, kernel = "linear",type = "C-classification",scale = F)
   w <- t(svm.model$coefs) %*% svm.model$SV
-  svm_results <- list(output_list,w,svm.model)
+  svm_results <- list(svm_output,w,svm.model)
+  cat('\nFinished SVM models\n')
 
   return(svm_results)
 }
@@ -228,8 +250,10 @@ run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,per
   # accuracy <- sum(pred_data$model.pred==pred_data$drug)/dim(pred_data)[1]
 
   # b <- binom.test(sum(pred_data$model.pred==pred_data$drug),dim(pred_data)[1],.5)
-  accuacy <- mean(accuracies)
-  b <- binom.test(accuracy,.5)
+  accuracy <- mean(accuracies)
+  num_obs <- length(prediction_output[[1]]$model.pred)
+  num_correct <- round(accuracy*num_obs)
+  b <- binom.test(num_correct,num_obs,.5)
   b$pred_data <- prediction_output
   
   if (permutation_test == T) {
@@ -289,7 +313,7 @@ run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,per
     print(b$perm_p)
   }
   
-  print(sprintf("Overall Accuracy: %1.3f; p = %.5f\n\n",sum(pred_data$model.pred==pred_data$drug)/dim(pred_data)[1],b$p.value))
+  print(sprintf("Overall Accuracy: %1.3f; p = %.5f\n\n",accuracy,b$p.value))
   
   return(list(b,W,num_features,svm.model))
 }
@@ -355,8 +379,8 @@ colnames(atlas_acc)=c("accuracy", "p.value", "fe","perm.p","atlas","num_features
 for (atlasname in atlas_list){
   cat(atlasname)
   ## Load the data
-  if (file.exists(sprintf("/cbica/projects/alpraz_EI/input/CorMats/%s_%s_%s.rdss",atlasname,GSR,subdivision))) {
-    # The data has already been compiled into a dataframe, just load it.
+  if (file.exists(sprintf("/cbica/projects/alpraz_EI/input/CorMats/%s_%s_%s.rds",atlasname,GSR,subdivision))) {
+    # The data has already been compiled into a data.frame, just load it.
     df <- readRDS(sprintf("/cbica/projects/alpraz_EI/input/CorMats/%s_%s_%s.rds",atlasname,GSR,subdivision))
   } else {
     # Compile the data if we haven't already.
@@ -483,3 +507,5 @@ df$pred <-svm.pred
 #save the output
 saveRDS(df%>%select(subid,sesid,pred,distance,decisionValues),file = sprintf("/cbica/projects/alpraz_EI/output/PNC_predictions/%s_%s.rds",atlasname,subdivision))
 }
+
+  
