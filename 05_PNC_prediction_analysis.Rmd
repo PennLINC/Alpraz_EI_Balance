@@ -16,7 +16,7 @@ library(purrr)
 require(ggplot2)
 library(cowplot)
 require(dplyr)
-knitr::opts_chunk$set(fig.height = 12,fig.width = 10,echo = F,warning = FALSE)
+knitr::opts_chunk$set(fig.height = 6,fig.width = 5,echo = F,warning = FALSE)
 source("Alpraz_viz_functions.R")
 font_size <- 16
 theme_set(theme_classic(base_family = "sans",base_size = font_size))
@@ -57,14 +57,15 @@ PNCData$exclusions <-  PNCData$ltnExcludev2==1 &
 data_mgmt <- function(fname){
   pred_results <- readRDS(fname)%>%
     left_join(PNCData,by = "subid")
-  pred_results$oPred <- ordered(pred_results$pred,levels=c(1,0),labels=c("Placebo","Drug")) #1 is placebo, 0 is drug.
+  pred_results$oPred <- ordered(pred_results$pred,levels=c(-1,1),labels=c("Placebo","Drug")) #-1 is placebo, 1 is drug.
   pred_results<-pred_results%>%
     mutate(age = ageAtCnb1/12,age2=age^2,
            oSex = ordered(sex,levels=c(1,2),labels=c("male","female")),
            oRace = ordered(race2),
            fRace = factor(race2),
            weights = 1/FD,
-           nPred = as.numeric(pred==0)) #Note Drug is now 1 and placebo is now 0 (for ease of visualization)
+           distance = as.numeric(distance),
+           nPred = as.numeric(pred==1)) #Note Drug is now 1 and placebo is now 0 (for ease of visualization)
   return(pred_results)
 }
 
@@ -109,7 +110,7 @@ plot_results <- function(pred_results,title_text){
   
   # Next we use distance from the classification hyperplane, a continuous measure, as the outcome. Fit as lm and gam.
   cat("\nDistance\n")
-  pred_results$Distance = pred_results$distance
+  pred_results$Distance = as.numeric(pred_results$distance)
   dist_bar_plot<-ggplot(data = pred_results,aes(x=Distance,fill=oPred)) +
   geom_histogram(bins = 30) +
   scale_fill_brewer(type = "qual",palette = "Set1")+
@@ -161,7 +162,7 @@ plot_results(pred_results,"Schaefer200_All_Regions")
 ## Schaefer 400
 Results when using all the schaefer 400 regions.  
 
-```{r 400,fig.height=8}
+```{r 400,fig.height=4, fig.width=5, warning=FALSE}
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_all.rds')
 display_results("schaefer400x7_aal",perm_results = F)
 # knitr::include_graphics("/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_matrix.png")
@@ -233,6 +234,7 @@ pred_s_200 = pred_results
 ```{r trans 400}
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_transmodal25.rds')
 alpraz_results <- readRDS("/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_GSR_transmodal25_svm_1_permute_off_results.rds")
+display_results(atlasname = "schaefer400x7_aal",perm_results = F,results = alpraz_results)
 b <- alpraz_results[[1]]
 cat("Results for alpraz (exact binomial test):\n")
 cat(sprintf("\n Number of features: %d\n",alpraz_results[[3]]))
@@ -254,6 +256,7 @@ pred_a_400 = pred_results
 ```{r uni 400}
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_unimodal25.rds')
 alpraz_results <- readRDS("/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_GSR_unimodal25_svm_1_permute_off_results.rds")
+display_results(atlasname = "schaefer400x7_aal",perm_results = F,results = alpraz_results)
 b <- alpraz_results[[1]]
 cat("Results for alpraz (exact binomial test):\n")
 cat(sprintf("\n Number of features: %d\n",alpraz_results[[3]]))
@@ -336,7 +339,7 @@ pred_join_400 <- pred_a_400 %>%
 
 # Fit as GAM
 pred_join_400$oSubdivision = ordered(pred_join_400$subdivision,levels = c("unimodal_classifier","transmodal_classifier"))
-gmod <-mgcv::gamm(Distance ~ oSex+FD+idemoBehAllEmoNrCount+ s(age,k=4) + s(mood_corrtraitsv2,k=4) + oSubdivision + s(age,by = oSubdivision,k=4) + s(mood_corrtraitsv2,by=oSubdivision),
+gmod <-mgcv::gamm(Distance ~ oSex+FD+idemoBehAllEmoNrCount+ s(age,k=4) + oSubdivision + s(age,by = oSubdivision,k=4),
                   data = pred_join_400,random=list(subid=~1))
 summary(gmod$gam)
 visualize_model(modobj = gmod,smooth_var = "age",int_var = "oSubdivision",group_var = NULL,derivative_plot = T)
@@ -344,7 +347,7 @@ visualize_model(modobj = gmod,smooth_var = "age",int_var = "oSubdivision",group_
 ```
 
 ## Clinical effects
-```{r clinical, eval=F,include=TRUE}
+```{r clinical, eval=F,include=TRUE,fig.height=2,fig.width=3}
 clinical <- read.csv('/cbica/projects/alpraz_EI/input/n1601_goassess_itemwise_bifactor_scores_20161219.csv')
 clinical$subid=clinical$bblid
 clinical_cortraits <- read.csv('/cbica/projects/alpraz_EI/input/n1601_goassess_itemwise_corrtraits_scores_20161219.csv')
@@ -418,7 +421,7 @@ visualize_model(mygam,smooth_var = "age",int_var =  "mood_4factorv2",group_var =
 ## Corr traits
 mygam <- gam(distance ~ s(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount + s(psychosis_corrtraitsv2,k=4) + s(mood_corrtraitsv2,k=4) + s(externalizing_corrtraitsv2,k=4) + s(fear_corrtraitsv2,k=4),data = pred_clinical,subset = exclusions==0)
 summary(mygam)
-visualize_model(mygam,smooth_var = "overall_psychopathology_corrtraitsv2",int_var = NULL,group_var = NULL)
+
 
 mygam <- gam(distance ~ ti(age,k=4)+ oSex+FD + idemoBehAllEmoNrCount +
                ti(psychosis_corrtraitsv2,k=4) + 
