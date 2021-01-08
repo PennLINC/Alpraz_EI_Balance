@@ -157,7 +157,7 @@ CV_function <- function(sublist,df,num_folds){
   return(pred_out)
 }
 
-SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
+SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1,num_repetitions = 100){
   #SVM 2-class classifier
   cat('\nRunning SVM models.....')
   # set up folds for CV
@@ -166,7 +166,7 @@ SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1){
     num_repetitions <- 1
   } else {
     num_folds = folds
-    num_repetitions <- 100
+    num_repetitions <- num_repetitions
   }
   cat(sprintf('\nRunning %d-fold CV %d times...',num_folds,num_repetitions))
   svm_output <- vector(mode = "list",length = num_repetitions)
@@ -332,6 +332,10 @@ featureExtraction <- function(trainingData, feature_proportion = .1){
   return(list(newTrainingData,keep_features))
 }
 
+#########################
+####### Load Data #######
+########################
+
 FD_thresh = .5 #matching what was used in Wolf et al.
 subData <- read.csv('/cbica/projects/alpraz_EI/input/alpraz_sublist_FD.csv')
 subInfo <- subData %>% filter(exists==1 & motion_pass==1)
@@ -347,7 +351,9 @@ subInfo <- subData %>% filter(exists==1 & motion_pass==1)
 PNCData <- read.csv('/cbica/projects/alpraz_EI/input/PNC_sublist_FD.csv')
 PNCInfo <- PNCData %>% filter(exists==1 & FD < FD_thresh)
 
+#####################
 #### SET OPTIONS ####
+#####################
 classifier = "svm"
 GSR="GSR"
 
@@ -360,9 +366,10 @@ perm_test="permute_off"
 # Set subdivision desired:
 ## "transmodal25" = top 25% most transmodal regions
 ## "unimodal25" = top 25% most unimodal regions
+## "all" = all regions
 ## "regional" = perform classification separately for each region in the atlas.
-subdivide = FALSE
-subdivision = "all"
+subdivide = TRUE
+subdivision = "transmodal25"
 cat(sprintf("\nsubdivision = %s\n",subdivision))
 
 # Atlas and FE  
