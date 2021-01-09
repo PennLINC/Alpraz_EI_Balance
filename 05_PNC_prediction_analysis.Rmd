@@ -57,7 +57,7 @@ PNCData$exclusions <-  PNCData$ltnExcludev2==1 &
 data_mgmt <- function(fname){
   pred_results <- readRDS(fname)%>%
     left_join(PNCData,by = "subid")
-  pred_results$oPred <- ordered(pred_results$pred,levels=c(-1,1),labels=c("Placebo","Drug")) #-1 is placebo, 1 is drug.
+  pred_results$oPred <- ordered(pred_results$pred,levels=c(1,0),labels=c("Placebo","Drug")) #1 is placebo, 0 is drug.
   pred_results<-pred_results%>%
     mutate(age = ageAtCnb1/12,age2=age^2,
            oSex = ordered(sex,levels=c(1,2),labels=c("male","female")),
@@ -65,7 +65,7 @@ data_mgmt <- function(fname){
            fRace = factor(race2),
            weights = 1/FD,
            distance = as.numeric(distance),
-           nPred = as.numeric(pred==1)) #Note Drug is now 1 and placebo is now 0 (for ease of visualization)
+           nPred = as.numeric(pred==0)) #Note Drug is now 1 and placebo is now 0 (for ease of visualization)
   return(pred_results)
 }
 
@@ -162,7 +162,7 @@ plot_results(pred_results,"Schaefer200_All_Regions")
 ## Schaefer 400
 Results when using all the schaefer 400 regions.  
 
-```{r 400,fig.height=4, fig.width=5, warning=FALSE}
+```{r 400,fig.height=3, fig.width=4, warning=FALSE}
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_all.rds')
 display_results("schaefer400x7_aal",perm_results = F)
 # knitr::include_graphics("/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_matrix.png")
@@ -239,6 +239,7 @@ b <- alpraz_results[[1]]
 cat("Results for alpraz (exact binomial test):\n")
 cat(sprintf("\n Number of features: %d\n",alpraz_results[[3]]))
 print(b$estimate)
+print(b$accuracy)
 cat(sprintf("p = %1.3f\n",b$p.value))
 cat(sprintf("Permutation p = %1.3f\n",b$perm_p))
 # perm_plot <- ggplot(data = data.frame(perm_acc=t(b$perm_results)),aes(x = perm_acc)) +

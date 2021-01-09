@@ -3,6 +3,7 @@
 # library(oro.nifti)
 library(neurobase)
 library(cowplot)
+library(ggridges)
 library(pracma)
 # library(purrr)
 # library(mgcv)
@@ -194,7 +195,33 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
               # scale_alpha_manual(values = c(.25,1))+
               ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+theme(legend.title = element_blank(),axis.title.x = element_blank())
             
-            rc_plot <- rc_plot + geom_point(data=corr_df,aes(x=as.factor(GABRA),y=r2,color="red"),size=3,show.legend = TRUE) +
+            rc_plot <- rc_plot + geom_point(data=corr_df,aes(x=as.factor(GABRA),y=R2,color="red"),size=3,show.legend = TRUE) +
+              scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
+              theme(legend.title = NULL)
+            print(rc_plot)
+            
+            rc_plot <- ggplot(data=x,aes(x = GABRA,y = R2,color = source)) + 
+              geom_boxplot(show.legend = TRUE,color="black") +
+              # geom_point(aes(color=source,size=source,alpha=source),position = position_jitter(width = .1),show.legend = TRUE) +
+              # scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
+              # scale_size_manual(values = c(.25,3))+
+              # scale_alpha_manual(values = c(.25,1))+
+              ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+theme(legend.title = element_blank(),axis.title.x = element_blank())
+            
+            rc_plot <- rc_plot + geom_point(data=corr_df,aes(x=as.factor(GABRA),y=R2,color=source),color="red",size=3,show.legend = TRUE) +
+              scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
+              theme(legend.title = NULL)
+            print(rc_plot)
+            
+            rc_plot <- ggplot(data=x,aes(y = GABRA,x = R2,color = source)) + 
+              geom_density_ridges(show.legend = TRUE) +
+              # geom_point(aes(color=source,size=source,alpha=source),position = position_jitter(width = .1),show.legend = TRUE) +
+              # scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
+              # scale_size_manual(values = c(.25,3))+
+              # scale_alpha_manual(values = c(.25,1))+
+              ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+theme(legend.title = element_blank(),axis.title.x = element_blank())
+            
+            rc_plot <- rc_plot + geom_point(data=corr_df,aes(y=as.factor(GABRA),x=R2,color="red"),size=3,show.legend = TRUE) +
               scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
               theme(legend.title = NULL)
             print(rc_plot)
@@ -611,12 +638,13 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
   
   b <- results[[1]]
   cat("Results for exact binomial test:\n")
+  cat(sprintf('accuracy = %1.3f',b$accuracy))
   print(b)
   
   # Look at W coefs
   W <- results[[2]]
   if (atlasname=="schaefer400x7_aal") {
-    feat_mat_obj <- feat2mat(W,atlasname,community_summary = T,GABA=T,transmodality = F,surface = T)
+    feat_mat_obj <- feat2mat(W,atlasname,community_summary = T,GABA=T,transmodality = T,surface = T)
   } else{
     feat_mat_obj <- feat2mat(W,atlasname,community_summary = T,GABA=T,transmodality = T)
   }

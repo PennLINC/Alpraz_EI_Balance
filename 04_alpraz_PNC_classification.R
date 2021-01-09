@@ -367,8 +367,8 @@ perm_test="permute_off"
 ## "unimodal25" = top 25% most unimodal regions
 ## "all" = all regions
 ## "regional" = perform classification separately for each region in the atlas.
-subdivide = TRUE
-subdivision = "unimodal25"
+subdivide = FALSE
+subdivision = "all"
 cat(sprintf("\nsubdivision = %s\n",subdivision))
 
 # Atlas and FE  
