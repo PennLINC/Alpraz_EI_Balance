@@ -16,7 +16,7 @@ library(purrr)
 require(ggplot2)
 library(cowplot)
 require(dplyr)
-knitr::opts_chunk$set(fig.height = 6,fig.width = 5,echo = F,warning = FALSE)
+knitr::opts_chunk$set(fig.height = 5,fig.width = 4,echo = F,warning = FALSE)
 source("Alpraz_viz_functions.R")
 font_size <- 16
 theme_set(theme_classic(base_family = "sans",base_size = font_size))
@@ -59,7 +59,7 @@ PNCData$exclusions <-  PNCData$ltnExcludev2==1 & #LTN exclude
 data_mgmt <- function(fname){
   pred_results <- readRDS(fname)%>%
     left_join(PNCData,by = "subid")
-  pred_results$oPred <- ordered(pred_results$pred,levels=c(-1,1),labels=c("Placebo","Drug")) #-1 is placebo, 1 is drug.
+  pred_results$oPred <- ordered(pred_results$pred,levels=c(1,0),labels=c("Placebo","Drug")) #1 is placebo, 0 is drug.
   pred_results<-pred_results%>%
     mutate(age = ageAtCnb1/12,age2=age^2,
            oSex = ordered(sex,levels=c(1,2),labels=c("male","female")),
@@ -67,7 +67,7 @@ data_mgmt <- function(fname){
            fRace = factor(race2),
            weights = 1/FD,
            distance = as.numeric(distance),
-           nPred = as.numeric(pred==1)) #Note Drug is now 1 and placebo is now 0 (for ease of visualization)
+           nPred = as.numeric(pred==0)) #Note Drug is now 1 and placebo is now 0 (for ease of visualization)
   return(pred_results)
 }
 
