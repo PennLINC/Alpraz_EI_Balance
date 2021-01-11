@@ -100,7 +100,7 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
         write.table(for_brainsmash,"/cbica/projects/alpraz_EI/output/brainsmash/input_files/schaefer400x7_aal_threshold_0.95_SVM_weights.txt",
                     row.names = F,col.names = F,sep=",")
         
-        gene_comparisons(rval_df)
+        # gene_comparisons(rval_df)
       }
       # Table
       sdf <- rval_df %>% group_by(community_name) %>% summarize(m = mean(rvals_abs)) %>% arrange(-m)
@@ -200,31 +200,18 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
               theme(legend.title = NULL)
             print(rc_plot)
             
-            rc_plot <- ggplot(data=x,aes(x = GABRA,y = R2,color = source)) + 
-              geom_boxplot(show.legend = TRUE,color="black") +
-              # geom_point(aes(color=source,size=source,alpha=source),position = position_jitter(width = .1),show.legend = TRUE) +
-              # scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
-              # scale_size_manual(values = c(.25,3))+
-              # scale_alpha_manual(values = c(.25,1))+
-              ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+theme(legend.title = element_blank(),axis.title.x = element_blank())
-            
-            rc_plot <- rc_plot + geom_point(data=corr_df,aes(x=as.factor(GABRA),y=R2,color=source),color="red",size=3,show.legend = TRUE) +
-              scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
-              theme(legend.title = NULL)
-            print(rc_plot)
-            
-            rc_plot <- ggplot(data=x,aes(y = GABRA,x = R2,color = source)) + 
-              geom_density_ridges(show.legend = TRUE) +
-              # geom_point(aes(color=source,size=source,alpha=source),position = position_jitter(width = .1),show.legend = TRUE) +
-              # scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
-              # scale_size_manual(values = c(.25,3))+
-              # scale_alpha_manual(values = c(.25,1))+
-              ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+theme(legend.title = element_blank(),axis.title.x = element_blank())
-            
-            rc_plot <- rc_plot + geom_point(data=corr_df,aes(y=as.factor(GABRA),x=R2,color="red"),size=3,show.legend = TRUE) +
-              scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
-              theme(legend.title = NULL)
-            print(rc_plot)
+            # rc_plot <- ggplot(data=x,aes(y = GABRA,x = R2,color = source)) + 
+            #   geom_density_ridges(show.legend = TRUE) +
+            #   # geom_point(aes(color=source,size=source,alpha=source),position = position_jitter(width = .1),show.legend = TRUE) +
+            #   # scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
+            #   # scale_size_manual(values = c(.25,3))+
+            #   # scale_alpha_manual(values = c(.25,1))+
+            #   ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+theme(legend.title = element_blank(),axis.title.x = element_blank())
+            # 
+            # rc_plot <- rc_plot + geom_point(data=corr_df,aes(y=as.factor(GABRA),x=R2,color="red"),size=3,show.legend = TRUE) +
+            #   scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
+            #   theme(legend.title = NULL)
+            # 
           }
           cat("GABRA gene analysis complete \n")
         }
@@ -614,6 +601,60 @@ gene_comparisons <- function(df){
 
 }
 
+ROC_curve <- function(DecisionValues, labels){
+  # Decision values is nx1
+  # Labels is nx1
+  
+  # N.B.
+  # Drug (class 0) is assigned as +1 by libsvm and placebo (class 1) is assigned as 0 by libsvm default. 
+  # Adjust the true labels and predicted labels to match that here so that the decision values make sense.
+  labels <- labels*-1+1
+  
+  P <- sum(labels == 1)
+  N <- sum(labels == 0)
+  Sorted_DecisionValues <- sort(unique(DecisionValues), decreasing = FALSE)
+  numDecisionValues <- length(Sorted_DecisionValues)
+  
+  TP_Array <- vector(mode = "numeric",length = numDecisionValues)
+  FP_Array <- vector(mode = "numeric",length = numDecisionValues)
+  Accuracy_Array = vector(mode = "numeric",length = numDecisionValues)
+  for (i in 1:numDecisionValues){
+    thisCutoff <- Sorted_DecisionValues[i]
+    thisPredictedLabels <- as.numeric(DecisionValues>thisCutoff)
+    detections <- thisPredictedLabels==1
+
+    TP <- sum(labels[detections] == thisPredictedLabels[detections])
+    TPR <- TP/P
+    FP <- sum(labels[detections]!=thisPredictedLabels[detections])
+    FPR <- FP/N
+    
+    TP_Array[i] <- TPR
+    FP_Array[i] <- FPR
+    
+    Accuracy_Array[i] = (TP + N - FP) / (P + N)
+  }
+  
+  LargestAccuracy = max(Accuracy_Array)
+  ROC_output <- data.frame(TPR =TP_Array,FPR=FP_Array,Accuracy = Accuracy_Array)
+  ROC_output <- ROC_output%>%arrange(TPR,FPR)
+  
+  #AUC
+  dFPR <- c(0,diff(ROC_output$FPR))
+  dTPR <- c(0,diff(ROC_output$TPR))
+  AUC <- sum(ROC_output$TPR * dFPR) + sum(dTPR * dFPR)/2
+  
+  # Plot 
+  MaxAccuracyIdx <- which.max(ROC_output$Accuracy)
+  roc_plot <- ggplot(ROC_output,aes(x=FPR,y=TPR))+geom_point() +
+    geom_line() +
+    geom_point(x=ROC_output$FPR[MaxAccuracyIdx],y=ROC_output$TPR[MaxAccuracyIdx],size=3,aes(color="red"))+
+    scale_color_manual(values="red",labels=sprintf("Max Accuracy = %1.3f",LargestAccuracy))+
+    theme(legend.title = element_blank(),legend.position = c(.5,.25),legend.background = element_blank(),legend.justification = c("left","top"))+
+    annotate("text",x=.58,y=.2,label = sprintf("AUC = %1.3f",AUC),hjust=0,size= theme_get()$text[["size"]]/4)+
+    xlab('False positive rate (1-specificity)')+ylab("True positive rate (sensitivity)")
+  print(roc_plot)
+}
+
 display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,result_fname=NULL,results=NULL){
   cat(sprintf("\n## Displaying classification results for %s atlas (classifier = %s)\n",atlasname,classifier))
   
@@ -664,12 +705,15 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
     cat(sprintf("p = %1.3f\n",b$p.value))
     cat(sprintf("Permutation p = %1.3f\n",b$perm_p))
     perm_plot <- ggplot(data = data.frame(perm_acc=t(b$perm_results[[1]])),aes(x = perm_acc)) +
-      geom_histogram()+geom_vline(xintercept = b$estimate) + 
+      geom_histogram()+geom_vline(xintercept = b$accuracy) + 
       geom_label(x = b$estimate,y = 100,label=paste0("Observed\n p = ",as.character(round(b$perm_p,digits = 4))))+
       xlab("Classification Accuracy")+ylab("Number of Draws")+
       ggtitle("Permutation Test")+coord_cartesian(clip = "off")
       
     print(perm_plot)
+    
+    pred_data <- b$pred_data
+    ROC_curve(pred_data$decisionValues,pred_data$drug)
     
     
     # permW <- b$perm_W
@@ -695,6 +739,14 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
     # w_sig_thresh = w_sig<.05
     # feat_mat_obj<-feat2mat(w_sig_thresh,atlasname = atlasname,community_summary = T)
     # wsig_mat <- feat_mat_obj$feat_mat
+  }
+  else{
+    pred_data <- b$pred_data[[1]] #Grabbing first one just to get the drug labels, subid, sesid.
+    dec_folds <- data.table::rbindlist(b$pred_data,idcol = "fold")%>%
+      pivot_wider(names_from = "fold","values_from"="decisionValues",id_cols = c("subid","sesid")) %>% 
+      group_by(subid,sesid)
+    pred_data$mean_dec_vals <- rowMeans(dec_folds[,3:dim(dec_folds)[2]])
+    ROC_curve(pred_data$mean_dec_vals,pred_data$drug)
   }
   # return(results)
 }
