@@ -16,7 +16,7 @@ library(purrr)
 require(ggplot2)
 library(cowplot)
 require(dplyr)
-knitr::opts_chunk$set(fig.height = 6,fig.width = 5,echo = F,warning = FALSE)
+knitr::opts_chunk$set(fig.height = 6,fig.width = 6,echo = F,warning = FALSE)
 source("Alpraz_viz_functions.R")
 font_size <- 16
 theme_set(theme_classic(base_family = "sans",base_size = font_size))
@@ -162,7 +162,7 @@ plot_results(pred_results,"Schaefer200_All_Regions")
 ## Schaefer 400
 Results when using all the schaefer 400 regions.  
 
-```{r 400,fig.height=3, fig.width=4, warning=FALSE}
+```{r 400, warning=FALSE}
 pred_results <- data_mgmt('/cbica/projects/alpraz_EI/output/PNC_predictions/schaefer400x7_aal_all.rds')
 display_results("schaefer400x7_aal",perm_results = F)
 # knitr::include_graphics("/cbica/projects/alpraz_EI/output/drug_classification/schaefer400x7_aal_matrix.png")
@@ -275,6 +275,7 @@ pred_s_400 = pred_results
 ```
 
 ### Age*Classifier  
+
 Looking at age*model interactions. We want to test the hypothesis that transmodal areas are undergoing the most pronounced E:I development in this age range. So, we test whether the transmodal model will produce labels (or distance values) that are more associated with age than the unimodal classification model.  
 
 ```{r sens_assoc diff,fig.height=8,fig.width=8}
