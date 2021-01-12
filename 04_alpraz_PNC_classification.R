@@ -355,7 +355,7 @@ run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,per
     
     b$perm_p <- perm_p
     b$perm_W_sig <- W_sig
-    b$perm_Ws <- perm_Ws
+    # b$perm_Ws <- perm_Ws #this takes up way too much space
     b$perm_accs = perm_acc_distribution
     b$perm_aucs = perm_auc_distribution
     print(b$perm_p)
@@ -511,11 +511,13 @@ for (atlasname in atlas_list){
                              permutation_test = permutation_test,num_permutations = num_permutations,
                              type = classifier)
         results[[5]]=atlasname
+        cat('\nFinished SVM\n')
       }
       
       saveRDS(results,
               file = sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_%s_%s_%s_%s_results.rds",
                              atlasname,GSR,subdivision,classifier,as.character(fe_list[n]),perm_test))
+      cat('saved\n')
     }
     
     # b <- results[[1]]
