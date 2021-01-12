@@ -607,9 +607,10 @@ gene_comparisons <- function(df){
 
 }
 
-ROC_curve <- function(DecisionValues, labels){
+ROC_curve <- function(DecisionValues, labels,perm_auc_distribution = NULL){
   # Decision values is nx1
   # Labels is nx1
+  # perm_auc_distribution = permutation auc distribution. This can be added if we want to compare our AUC to a null AUC distribution.
   
   # N.B.
   # Drug (class 0) is assigned as +1 by libsvm and placebo (class 1) is assigned as 0 by libsvm default. 
@@ -659,6 +660,8 @@ ROC_curve <- function(DecisionValues, labels){
     annotate("text",x=.58,y=.2,label = sprintf("AUC = %1.3f",AUC),hjust=0,size= theme_get()$text[["size"]]/4)+
     xlab('False positive rate (1-specificity)')+ylab("True positive rate (sensitivity)")
   print(roc_plot)
+  
+  return(AUC)
 }
 
 display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,result_fname=NULL,results=NULL){
@@ -674,7 +677,7 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
       results <- readRDS(result_fname)
     } else {
       if (perm_results == T){
-        results <- readRDS(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_%s_1_permute_on_results.rds",
+        results <- readRDS(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_all_%s_1_permute_on_results.rds",
                                    atlasname,GSR,classifier))
       }else {
         results <- readRDS(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_all_%s_1_permute_off_results.rds",
@@ -684,9 +687,17 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
   }
   
   b <- results[[1]]
-  cat("Results for exact binomial test:\n")
+  # cat("Results for exact binomial test:\n")
   cat(sprintf('accuracy = %1.3f',b$accuracy))
-  print(b)
+  # print(b)
+  
+  # Get ROC curve and AUC
+  pred_data <- b$pred_data[[1]] #Grabbing first one just to get the drug labels, subid, sesid.
+  dec_folds <- data.table::rbindlist(b$pred_data,idcol = "fold")%>%
+    pivot_wider(names_from = "fold","values_from"="decisionValues",id_cols = c("subid","sesid")) %>% 
+    group_by(subid,sesid)
+  pred_data$mean_dec_vals <- rowMeans(dec_folds[,3:dim(dec_folds)[2]])
+  AUC <- ROC_curve(pred_data$mean_dec_vals,pred_data$drug)
   
   # Look at W coefs
   W <- results[[2]]
@@ -704,22 +715,28 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
 
   if ("perm_W" %in% names(b)) {
     # show permuted W significance
-    b <- results[[1]]
-    cat("Results for alpraz (exact binomial test):\n")
+    # b <- results[[1]]
+    # cat("Results for alpraz (exact binomial test):\n")
     cat(sprintf("\n Number of features: %d\n",results[[3]]))
-    print(b$estimate)
-    cat(sprintf("p = %1.3f\n",b$p.value))
+    cat(sprintf("Accuracy = %1.4f",b$accuracy))
     cat(sprintf("Permutation p = %1.3f\n",b$perm_p))
-    perm_plot <- ggplot(data = data.frame(perm_acc=t(b$perm_results[[1]])),aes(x = perm_acc)) +
+    perm_acc_plot <- ggplot(data = data.frame(perm_acc_distribution=b$perm_accs),aes(x = perm_acc_distribution)) +
       geom_histogram()+geom_vline(xintercept = b$accuracy) + 
       geom_label(x = b$estimate,y = 100,label=paste0("Observed\n p = ",as.character(round(b$perm_p,digits = 4))))+
       xlab("Classification Accuracy")+ylab("Number of Draws")+
       ggtitle("Permutation Test")+coord_cartesian(clip = "off")
+    
+    perm_auc_plot <- ggplot(data = data.frame(perm_auc_distribution=b$perm_aucs),aes(x = perm_auc_distribution)) +
+      geom_histogram()+geom_vline(xintercept = AUC) + 
+      geom_label(x = b$estimate,y = 100,label=paste0("Observed\n p = ",as.character(round(b$perm_p,digits = 4))))+
+      xlab("AUC")+ylab("Number of Draws")+
+      ggtitle("Permutation Test")+coord_cartesian(clip = "off")
       
-    print(perm_plot)
+    print(perm_acc_plot)
+    print(perm_auc_plot)
     
     pred_data <- b$pred_data
-    ROC_curve(pred_data$decisionValues,pred_data$drug)
+    AUC <- ROC_curve(pred_data$decisionValues,pred_data$drug)
     
     
     # permW <- b$perm_W
