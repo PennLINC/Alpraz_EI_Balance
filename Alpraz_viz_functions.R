@@ -185,20 +185,26 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
                                   r = corr_vec,
                                   R2 = corr_vec^2,
                                   source = "Observed")
-            x <- rbind(x,corr_df)
-
-            rc_plot <- ggplot(data=x,aes(x = GABRA,y = R2,color = source)) + 
-              geom_violin(show.legend = TRUE,alpha = .9,fill="black") +
+            # x <- rbind(x,corr_df)
+            x <- x %>%
+              mutate(benzo_sensitivity = factor(GABRA %in% c("GABRA1","GABRA2","GABRA3","GABRA5"),
+                                                   levels=c("TRUE","FALSE"),
+                                                   labels=c("BZD sensitive","BZD insensitive"))
+              )
+            rc_plot <- ggplot(data=x,aes(x = GABRA,y = R2)) + 
+              geom_violin(show.legend = TRUE,alpha = .9,aes(fill=benzo_sensitivity)) +
+              scale_fill_brewer(type = "qual",palette = "Set2",guide = guide_legend(override.aes = list(color=NULL)))+
               # geom_point(aes(color=source,size=source,alpha=source),position = position_jitter(width = .1),show.legend = TRUE) +
               # scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
               # scale_size_manual(values = c(.25,3))+
               # scale_alpha_manual(values = c(.25,1))+
-              ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+theme(legend.title = element_blank(),axis.title.x = element_blank())
+              ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+
+              theme(legend.title = element_blank(),axis.title.x = element_blank(),axis.text.x = element_text(angle = 45,hjust=1))
             
-            rc_plot <- rc_plot + geom_point(data=corr_df,aes(x=as.factor(GABRA),y=R2,color="red"),size=3,show.legend = TRUE) +
-              scale_color_manual(values = c("black","red"),labels = c("BrainSMASH null","Observed")) +
-              theme(legend.title = NULL)
+            rc_plot <- rc_plot + geom_point(data=corr_df,aes(x=as.factor(GABRA),y=R2,color="black"),size=4,show.legend = TRUE) +
+              scale_color_manual(values = c("black"),labels = c("Observed")) 
             print(rc_plot)
+            ggsave(filename = "figs/GABRA.svg",plot = rc_plot,device = "svg",width = 6.5,height = 5,units = "in")
             
             # rc_plot <- ggplot(data=x,aes(y = GABRA,x = R2,color = source)) + 
             #   geom_density_ridges(show.legend = TRUE) +
