@@ -181,10 +181,10 @@ SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1,nu
     fold_output<-vector(mode = "list",length = num_folds)
     cat(sprintf('\nrepetition  %d.... ',r))
     for (fold in 1:num_folds) {
-      cat(sprintf('\nflold  %d.... ',fold))
+      cat(sprintf('\nfold  %d.... ',fold))
       trainingIDs <- as.matrix(foldIdxs %>% filter(foldID != fold) %>% select(subid))
       trainingIndex <- df$subid %in% trainingIDs # indices for training subs
-      trainingData <- df[trainingIndex, 3:dim(df)[2] ]
+      trainingData <- df[trainingIndex, 3:dim(df)[2] ] %>% arrange(drug) #this is important because libsvm automatically makes the first observation class 1, so drug must be first every time.
       testData <- df[!trainingIndex, 4:dim(df)[2]] # test data. Take columns 4:end (Removes subid sesid drug).
       testLabels <- data.frame(df[!trainingIndex,c(1:3) ])
       # svm
@@ -221,15 +221,57 @@ SVM_2class <- function(df,folds,feature_selection = F,feature_proportion = .1,nu
   return(svm_results)
 }
 
+AUC <- function(DecisionValues, labels){
+  # Decision values is nx1
+  # Labels is nx1
+  
+  # N.B.
+  # Drug (class 0) is assigned as +1 by libsvm and placebo (class 1) is assigned as 0 by libsvm default. 
+  # Adjust the true labels and predicted labels to match that here so that the decision values make sense.
+  labels <- labels*-1+1
+  
+  P <- sum(labels == 1)
+  N <- sum(labels == 0)
+  Sorted_DecisionValues <- sort(unique(DecisionValues), decreasing = FALSE)
+  numDecisionValues <- length(Sorted_DecisionValues)
+  
+  TP_Array <- vector(mode = "numeric",length = numDecisionValues)
+  FP_Array <- vector(mode = "numeric",length = numDecisionValues)
+  Accuracy_Array = vector(mode = "numeric",length = numDecisionValues)
+  for (i in 1:numDecisionValues){
+    thisCutoff <- Sorted_DecisionValues[i]
+    thisPredictedLabels <- as.numeric(DecisionValues>thisCutoff)
+    detections <- thisPredictedLabels==1
+    
+    TP <- sum(labels[detections] == thisPredictedLabels[detections])
+    TPR <- TP/P
+    FP <- sum(labels[detections]!=thisPredictedLabels[detections])
+    FPR <- FP/N
+    
+    TP_Array[i] <- TPR
+    FP_Array[i] <- FPR
+    
+    Accuracy_Array[i] = (TP + N - FP) / (P + N)
+  }
+  
+  ROC_output <- data.frame(TPR =TP_Array,FPR=FP_Array,Accuracy = Accuracy_Array)
+  ROC_output <- ROC_output%>%arrange(TPR,FPR)
+  
+  #AUC
+  dFPR <- c(0,diff(ROC_output$FPR))
+  dTPR <- c(0,diff(ROC_output$TPR))
+  AUC <- sum(ROC_output$TPR * dFPR) + sum(dTPR * dFPR)/2
+  return(AUC)
+}
+
 run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,permutation_test = F, num_permutations = 10000,type = "svm"){
   ## This sends the data to the desired classifier and other functions
   if (feature_selection == T) {
     # cat(sprintf("\nPerforming feature extraction: extracting the top %1.3f features\n",feature_proportion))
   }
-  
   if (type == "svm") {
     print("Performing classification using SVM")
-    model_results <- SVM_2class(df,folds,feature_selection = feature_selection,feature_proportion = feature_proportion)
+    model_results <- SVM_2class(df,folds,feature_selection = feature_selection,feature_proportion = feature_proportion,num_repetitions = 1)
   } # No other types for now
   
   prediction_output <- model_results[[1]]
@@ -258,7 +300,7 @@ run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,per
   if (permutation_test == T) {
     print(sprintf("Permuting %d times...",num_permutations))
     ptm = proc.time()
-    cl<-makeCluster(12)
+    cl<-makeCluster(20)
     registerDoParallel(cl)
     nw <- getDoParWorkers()
     # # perms <- shuffleSet(n = dim(df)[1],nset = num_permutations)
@@ -278,37 +320,44 @@ run_model <- function(df,folds,feature_selection = F,feature_proportion = .1,per
                             # thisDF$drug <- df$drug[thisPerm]
                             permuted <- df %>% select(subid,drug) %>% group_by(subid) %>% mutate(perm_drug=sample(drug))
                             thisDF$drug <- permuted$perm_drug
-                            perm_pred_result <- SVM_2class(thisDF,folds,feature_selection = feature_selection,feature_proportion = feature_proportion)
-                            perm_pred_data <- perm_pred_result[[1]]
-                            perm_W_folds <- perm_pred_result[[2]]
-                            perm_num_features <- sum(!is.na(perm_W_folds[1,]))
-                            perm_meanW <- colMeans(perm_W_folds,na.rm=T)
-                            pW <- perm_meanW
-                            pacc<-sum(perm_pred_data$model.pred==perm_pred_data$drug)/dim(perm_pred_data)[1]
-                            perm_result_list[p]=list(list(acc=pacc,W=pW))
+                            perm_pred_result <- SVM_2class(thisDF,folds,
+                                                           feature_selection = feature_selection,
+                                                           feature_proportion = feature_proportion,
+                                                           num_repetitions = 1)
+                            # perm_pred_data <- perm_pred_result[[1]][[1]] #$pred_data[[1]]
+                            # perm_W <- perm_pred_result[[2]]
+                            # perm_num_features <- sum(!is.na(perm_W))
+                            # pacc<-sum(perm_pred_data$model.pred==perm_pred_data$drug)/dim(perm_pred_data)[1]
+                            # pdf <- data.frame(acc=pacc,pred_data=perm_pred_data)  #make a data.frame to hold the output
+                            # names(pdf) = c("acc",names(perm_pred_data)) # fix names
+                            # pdf <- pdf %>% group_by(acc) %>%nest(pred_data = c(names(perm_pred_data))) # nest the pred_data df so we have one line per permutation
+                            # perm_result_list[p]=list(pred_output = pdf,W=perm_W) #add the data.frame to the list
+                            perm_result_list[[p]] = list(perm_pred_result)
                           }
-                          
                           perm_result_list
                         }
     print("done")
     stopCluster(cl)
     
     print(proc.time()-ptm)
-    perm_df <- as.data.frame(perm_list)
-    perm_acc <- perm_df %>% select(contains("acc")) %>% summarize_all(mean)
-    perm_plot <- ggplot(data = data.frame(perm_acc=t(perm_acc)),aes(x = perm_acc))+geom_histogram()+geom_vline(xintercept = accuracy)
-    ggsave(perm_plot,filename = "permutaton_plot.png",device = "png")
-    perm_p <- sum(perm_acc>accuracy)/length(perm_acc)
+    pred_data_list <- lapply(perm_list, function(x) x[[1]][[1]])
+    perm_Ws <- lapply(perm_list,function(x) x[[1]][[2]])
+    
+    perm_acc_distribution <- sapply(pred_data_list, function(x) sum(x[[1]]$model.pred==x[[1]]$drug)/length(x[[1]]$drug))
+    perm_p <- sum(perm_acc_distribution>accuracy)/length(perm_acc_distribution)
+    perm_auc_distribution <- sapply(pred_data_list, function(x) AUC(DecisionValues=x[[1]]$decisionValues,labels=x[[1]]$drug))
+
     cat(sprintf("\nPermutation p-value =  %1.3f\n",perm_p))
-    perm_W <- perm_df %>% select(contains("W"))
-    W_test <- sapply(perm_W, FUN = function(x) {
+    W_test <- sapply(perm_Ws, FUN = function(x) {
       abs(x)>abs(W)
     })
     W_sig <- rowMeans(W_test)
+    
     b$perm_p <- perm_p
     b$perm_W_sig <- W_sig
-    b$perm_W <- perm_W
-    b$perm_results = perm_acc
+    b$perm_Ws <- perm_Ws
+    b$perm_accs = perm_acc_distribution
+    b$perm_aucs = perm_auc_distribution
     print(b$perm_p)
   }
   
@@ -358,7 +407,10 @@ GSR="GSR"
 
 # Permutation test?
 # Do we want to use a permutation test for significance testing?
-perm_test="permute_off"
+# "permute_on" = yes
+# "permute_off" = no
+perm_test="permute_on"
+num_permutations = 1000
 
 # Do we want to pull out only certain brain areas?
 # Set subdivide = TRUE if this is desired
@@ -442,7 +494,7 @@ for (atlasname in atlas_list){
           wide_df <- a_df %>%pivot_wider(id_cols = c(subid,sesid,drug),names_from = name,values_from = value)
           results <- run_model(df = wide_df,folds = 10,
                                feature_selection = feature_selection,feature_proportion = num,
-                               permutation_test = permutation_test,num_permutations = 1000,
+                               permutation_test = permutation_test,num_permutations = num_permutations,
                                type = classifier)
         }
         nest_df <- df %>% group_by(row_label) %>% group_nest()
@@ -456,11 +508,10 @@ for (atlasname in atlas_list){
       } else {
         results <- run_model(df = df,folds = 10,
                              feature_selection = feature_selection,feature_proportion = num,
-                             permutation_test = permutation_test,num_permutations = 1000,
+                             permutation_test = permutation_test,num_permutations = num_permutations,
                              type = classifier)
         results[[5]]=atlasname
       }
-      
       
       saveRDS(results,
               file = sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_%s_%s_%s_%s_%s_results.rds",
