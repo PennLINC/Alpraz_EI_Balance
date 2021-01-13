@@ -79,7 +79,7 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
     colnames(newCC)=mat_labels$node_names
     rownames(newCC)=mat_labels$node_names
     #write to brain
-    # mat2brain(newCC,atlasname,sprintf('%_weights.nii.gz',atlasname))
+    mat2brain(newCC,atlasname,sprintf('%s_signed_weights.nii.gz',atlasname))
     
     # Arrange by community membership
     orderCC <- newCC[order(mat_labels$node_community),order(mat_labels$node_community)]
@@ -278,20 +278,30 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
             ggtitle("Region sum W by transmodality")+ylab("Region global SVM weight")
           tlegend <- get_legend(dotplot +theme(legend.position = "bottom",legend.title = element_blank(),legend.background = element_blank()))
           dotplot <- dotplot + theme(legend.position = "none")
-          # print(dotplot)
-          #absolute value
-          r = cor.test(rval_df_trans$transmodality,rval_df_trans$rvals_abs)
-          dotplot_abs <- ggplot(data=rval_df_trans,
-                                aes(x=transmodality,
-                                    y=rvals_abs,
-                                    color = community_name)) +
-            geom_point()+
-            geom_smooth(method = "lm",aes(x=transmodality,y=rvals_abs,color=NULL)) +
-            annotate(x=mean(rval_df_trans$transmodality,na.rm=T),y=mean(rval_df_trans$rvals_abs),geom = "text",label=sprintf("r = %1.2f,p = %1.3f",r$estimate,r$p.value))+
-            ggtitle("Region sum absolute W by transmodality")+theme(legend.position = "none")+ylab("Region global SVM Weight")
-          dotplots_top <- cowplot::plot_grid(dotplot,dotplot_abs,nrow = 1,align = "h",axis = "lr")
-          dotplots <- cowplot::plot_grid(dotplots_top,tlegend,nrow = 2,align = "h",rel_heights = c(1,.3))
-          print(dotplots)
+          print(dotplot)
+          
+          brainsmash_distribution = read.table('surrogate_naive_corrs_Transmodality_map.txt',col.names = "brainSMASH")%>%
+            mutate(R2 = brainSMASH^2)
+          brainsmash_plot <- ggplot(data=x,aes(x = 1,y = brainsmash_distribution)) + 
+            geom_violin(show.legend = TRUE,alpha = .9,fill="grey50") +
+            ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+
+            theme(legend.title = element_blank(),axis.title.x = element_blank(),axis.text.x = element_blank()) +
+            geom_point(data=corr_df,aes(x=1,y=r^2,color="black"),size=4,show.legend = FALSE) 
+          print(brainsmash_plot)
+          ggsave(filename = "figs/brainsmash_plot.svg",plot = brainsmash_plot,device = "svg",width = 2,height = 3.5,units = "in")
+          # #absolute value
+          # r = cor.test(rval_df_trans$transmodality,rval_df_trans$rvals_abs)
+          # dotplot_abs <- ggplot(data=rval_df_trans,
+          #                       aes(x=transmodality,
+          #                           y=rvals_abs,
+          #                           color = community_name)) +
+          #   geom_point()+
+          #   geom_smooth(method = "lm",aes(x=transmodality,y=rvals_abs,color=NULL)) +
+          #   annotate(x=mean(rval_df_trans$transmodality,na.rm=T),y=mean(rval_df_trans$rvals_abs),geom = "text",label=sprintf("r = %1.2f,p = %1.3f",r$estimate,r$p.value))+
+          #   ggtitle("Region sum absolute W by transmodality")+theme(legend.position = "none")+ylab("Region global SVM Weight")
+          # dotplots_top <- cowplot::plot_grid(dotplot,dotplot_abs,nrow = 1,align = "h",axis = "lr")
+          # dotplots <- cowplot::plot_grid(dotplots_top,tlegend,nrow = 2,align = "h",rel_heights = c(1,.3))
+          # print(dotplots)
           
           g <- g %>% left_join(mat_labels%>% select(node_names,transmodality),by = c("x"="node_names"))
           g <- g %>% left_join(mat_labels%>% select(node_names,transmodality),by = c("y"="node_names"),suffix = c("x","y"))
@@ -641,7 +651,7 @@ ROC_curve <- function(DecisionValues, labels,perm_auc_distribution = NULL){
     Accuracy_Array[i] = (TP + N - FP) / (P + N)
   }
   
-  LargestAccuracy = max(Accuracy_Array)
+  # LargestAccuracy = max(Accuracy_Array)
   ROC_output <- data.frame(TPR =TP_Array,FPR=FP_Array,Accuracy = Accuracy_Array)
   ROC_output <- ROC_output%>%arrange(TPR,FPR)
   
@@ -651,14 +661,17 @@ ROC_curve <- function(DecisionValues, labels,perm_auc_distribution = NULL){
   AUC <- sum(ROC_output$TPR * dFPR) + sum(dTPR * dFPR)/2
   
   # Plot 
-  MaxAccuracyIdx <- which.max(ROC_output$Accuracy)
-  roc_plot <- ggplot(ROC_output,aes(x=FPR,y=TPR))+geom_point() +
-    geom_line() +
-    geom_point(x=ROC_output$FPR[MaxAccuracyIdx],y=ROC_output$TPR[MaxAccuracyIdx],size=3,aes(color="red"))+
-    scale_color_manual(values="red",labels=sprintf("Max Accuracy = %1.3f",LargestAccuracy))+
-    theme(legend.title = element_blank(),legend.position = c(.5,.25),legend.background = element_blank(),legend.justification = c("left","top"))+
-    annotate("text",x=.58,y=.2,label = sprintf("AUC = %1.3f",AUC),hjust=0,size= theme_get()$text[["size"]]/4)+
-    xlab('False positive rate (1-specificity)')+ylab("True positive rate (sensitivity)")
+  # MaxAccuracyIdx <- which.max(ROC_output$Accuracy)
+  roc_plot <- ggplot(ROC_output,aes(x=FPR,y=TPR)) +
+    geom_point() + geom_line() +
+    geom_abline(slope = 1, intercept = 0,linetype = "dashed") +
+    # geom_point(x=ROC_output$FPR[MaxAccuracyIdx],y=ROC_output$TPR[MaxAccuracyIdx],size=3,aes(color="red"))+
+    # scale_color_manual(values="red",labels=sprintf("Max Accuracy = %1.3f",LargestAccuracy))+
+    # theme(legend.title = element_blank(),legend.position = c(.5,.25),legend.background = element_blank(),legend.justification = c("left","top"))+
+    annotate("text",x=.58,y=.2,label = sprintf("AUC = %1.3f",AUC),hjust=0,size= theme_get()$text[["size"]]/4) +
+    xlab('False positive rate (1-specificity)')+ylab("True positive rate (sensitivity)") +
+    theme(axis.line.y.right = element_line(),axis.line.x.top = element_line())
+  ggsave(file='figs/ROC_plot.svg',plot=roc_plot,device='svg',height=4,width=4.5,units = "in")
   print(roc_plot)
   
   return(AUC)
@@ -708,12 +721,10 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
   }
   Wmap <- feat_mat_obj$feat_mat
   comm_ranks <- feat_mat_obj$community_ranks
-  # c1 <- corrplot::corrplot(Wmap,is.corr = F, method = "color",na.label = "square",title = sprintf("%s W coefficients",atlasname),
-  #                            diag = F,tl.cex = .2)
-  # knitr::include_graphics(sprintf("/cbica/projects/alpraz_EI/output/drug_classification/%s_matrix.png",atlasname))
-  # mat2brain(CC = abs(Wmap),atlasname = atlasname, filename = sprintf("%s_%s_%s",atlasname,GSR,classifier))
 
-  if ("perm_W" %in% names(b)) {
+  mat2brain(CC = abs(Wmap),atlasname = atlasname, filename = sprintf("%s_%s_%s_abs_weights",atlasname,GSR,classifier))
+
+  if ("perm_p" %in% names(b)) {
     # show permuted W significance
     # b <- results[[1]]
     # cat("Results for alpraz (exact binomial test):\n")
@@ -722,22 +733,22 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
     cat(sprintf("Permutation p = %1.3f\n",b$perm_p))
     perm_acc_plot <- ggplot(data = data.frame(perm_acc_distribution=b$perm_accs),aes(x = perm_acc_distribution)) +
       geom_histogram()+geom_vline(xintercept = b$accuracy) + 
-      geom_label(x = b$estimate,y = 100,label=paste0("Observed\n p = ",as.character(round(b$perm_p,digits = 4))))+
+      geom_label(x = b$accuracy,y = 100,label=paste0("Observed\n p = ",as.character(round(b$perm_p,digits = 4))))+
       xlab("Classification Accuracy")+ylab("Number of Draws")+
       ggtitle("Permutation Test")+coord_cartesian(clip = "off")
     
+    perm_auc_p <-sum(b$perm_aucs>AUC)/length(b$perm_aucs)
     perm_auc_plot <- ggplot(data = data.frame(perm_auc_distribution=b$perm_aucs),aes(x = perm_auc_distribution)) +
       geom_histogram()+geom_vline(xintercept = AUC) + 
-      geom_label(x = b$estimate,y = 100,label=paste0("Observed\n p = ",as.character(round(b$perm_p,digits = 4))))+
+      geom_label(x = AUC,y = 100,label=paste0("Observed\n p = ",perm_auc_p))+
       xlab("AUC")+ylab("Number of Draws")+
       ggtitle("Permutation Test")+coord_cartesian(clip = "off")
       
     print(perm_acc_plot)
+    ggsave(file='figs/perm_acc_plot.svg',plot=perm_acc_plot,device='svg',height=2.5,width=3,units = "in")
     print(perm_auc_plot)
-    
-    pred_data <- b$pred_data
-    AUC <- ROC_curve(pred_data$decisionValues,pred_data$drug)
-    
+    ggsave(file='figs/perm_auc_plot.svg',plot=perm_auc_plot,device='svg',height=2.5,width=3,units = "in")
+
     
     # permW <- b$perm_W
     # if (file.exists(sprintf("%s_permutation_communities.rds",atlasname))){
@@ -762,14 +773,6 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
     # w_sig_thresh = w_sig<.05
     # feat_mat_obj<-feat2mat(w_sig_thresh,atlasname = atlasname,community_summary = T)
     # wsig_mat <- feat_mat_obj$feat_mat
-  }
-  else{
-    pred_data <- b$pred_data[[1]] #Grabbing first one just to get the drug labels, subid, sesid.
-    dec_folds <- data.table::rbindlist(b$pred_data,idcol = "fold")%>%
-      pivot_wider(names_from = "fold","values_from"="decisionValues",id_cols = c("subid","sesid")) %>% 
-      group_by(subid,sesid)
-    pred_data$mean_dec_vals <- rowMeans(dec_folds[,3:dim(dec_folds)[2]])
-    ROC_curve(pred_data$mean_dec_vals,pred_data$drug)
   }
   # return(results)
 }
