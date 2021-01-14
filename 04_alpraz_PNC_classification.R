@@ -419,8 +419,8 @@ num_permutations = 1000
 ## "unimodal25" = top 25% most unimodal regions
 ## "all" = all regions
 ## "regional" = perform classification separately for each region in the atlas.
-subdivide = FALSE
-subdivision = "all"
+subdivide = TRUE
+subdivision = "transmodal25"
 cat(sprintf("\nsubdivision = %s\n",subdivision))
 
 # Atlas and FE  
