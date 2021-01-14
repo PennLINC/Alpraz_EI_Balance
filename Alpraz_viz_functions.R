@@ -268,25 +268,27 @@ feat2mat <- function(W,atlasname,community_summary = F,plots = T,templateCC = NU
             scale_x_discrete(position = "top")  + ggtitle(paste0('transmodality ',atlasname))
           
           r = cor.test(rval_df_trans$transmodality,rval_df_trans$rvals)
+          trans_R2 <- r$estimate^2
           dotplot <- ggplot(data=rval_df_trans,
                             aes(x=transmodality,
                                 y=rvals,
                                 color = community_name)) +
-            geom_point()+
-            geom_smooth(method = "lm",aes(x=transmodality,y=rvals,color=NULL)) +
+            geom_point(color="black")+
+            geom_smooth(method = "lm",aes(x=transmodality,y=rvals),color="black") +
             annotate(x=mean(rval_df_trans$transmodality,na.rm=T),y=mean(rval_df_trans$rvals),geom = "text",label=sprintf("r = %1.2f,p = %1.3f",r$estimate,r$p.value))+
             ggtitle("Region sum W by transmodality")+ylab("Region global SVM weight")
           tlegend <- get_legend(dotplot +theme(legend.position = "bottom",legend.title = element_blank(),legend.background = element_blank()))
           dotplot <- dotplot + theme(legend.position = "none")
           print(dotplot)
+          ggsave(file='figs/transmodality_svmW_plot.svg',plot=dotplot,device='svg',height=4,width=4.5,units = "in")
           
-          brainsmash_distribution = read.table('surrogate_naive_corrs_Transmodality_map.txt',col.names = "brainSMASH")%>%
-            mutate(R2 = brainSMASH^2)
-          brainsmash_plot <- ggplot(data=x,aes(x = 1,y = brainsmash_distribution)) + 
+          brainsmash_distribution = read.table('surrogate_brainmap_corrs_Transmodality_map.txt',col.names = "brainSMASH")%>%
+            mutate(R2 = brainSMASH^2, varname = "Transmodality")
+          brainsmash_plot <- ggplot(data=brainsmash_distribution,aes(x =varname,y = R2)) + 
             geom_violin(show.legend = TRUE,alpha = .9,fill="grey50") +
             ylab(bquote("Spatial relationship" ~ (italic(R)^2)))+
             theme(legend.title = element_blank(),axis.title.x = element_blank(),axis.text.x = element_blank()) +
-            geom_point(data=corr_df,aes(x=1,y=r^2,color="black"),size=4,show.legend = FALSE) 
+            geom_point(aes(x=varname,y=trans_R2),color="black",size=4,show.legend = FALSE) 
           print(brainsmash_plot)
           ggsave(filename = "figs/brainsmash_plot.svg",plot = brainsmash_plot,device = "svg",width = 2,height = 3.5,units = "in")
           # #absolute value
@@ -677,7 +679,7 @@ ROC_curve <- function(DecisionValues, labels,perm_auc_distribution = NULL){
   return(AUC)
 }
 
-display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,result_fname=NULL,results=NULL){
+display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,result_fname=NULL,results=NULL,subdivision=NULL){
   cat(sprintf("\n## Displaying classification results for %s atlas (classifier = %s)\n",atlasname,classifier))
   
   # df_acc <- read.csv(sprintf('/cbica/projects/alpraz_EI/output/drug_classification/%s_results_%s.csv',GSR,classifier))
@@ -743,11 +745,10 @@ display_results <- function(atlasname,GSR="GSR",classifier="svm",perm_results=F,
       geom_label(x = AUC,y = 100,label=paste0("Observed\n p = ",perm_auc_p))+
       xlab("AUC")+ylab("Number of Draws")+
       ggtitle("Permutation Test")+coord_cartesian(clip = "off")
-      
-    print(perm_acc_plot)
-    ggsave(file='figs/perm_acc_plot.svg',plot=perm_acc_plot,device='svg',height=2.5,width=3,units = "in")
     print(perm_auc_plot)
-    ggsave(file='figs/perm_auc_plot.svg',plot=perm_auc_plot,device='svg',height=2.5,width=3,units = "in")
+
+    ggsave(file=sprintf('figs/perm_acc_plot_%s.svg',subdivision),plot=perm_acc_plot,device='svg',height=2.5,width=3,units = "in")
+    ggsave(file=sprintf('figs/perm_auc_plot_%s.svg',subdivision),plot=perm_auc_plot,device='svg',height=2.5,width=3,units = "in")
 
     
     # permW <- b$perm_W
