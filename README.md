@@ -24,7 +24,7 @@ file_out=output_name
 input_file=/cbica/projects/alpraz_EI/data/TASK_GSR/xcpengine/sub-012969/ses-001561/task-emotionid/space-MNI152NLin2009cAsym/task/stats/sub-012969_ses-001561_task-emotionid_space-MNI152NLin2009cAsym_res4d.nii.gz
 
 3dNetCorr -in_rois "$atlas" -prefix $file_out -inset $input_file
-```
+```  
 
 Alternatively, you can use your preferred method of generating connectivity matrices and compare outputs. For comparison, the outputs from my script are stored like:
 `/cbica/projects/alpraz_EI/data/TASK_GSR/12969/1561/schaefer400x7_aal_CC_GSR_000.netcc` for the above example subject.  
