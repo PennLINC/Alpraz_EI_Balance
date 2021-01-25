@@ -18,7 +18,7 @@ The scripts are numbered according to the order they should run.
 2. This script launches a ton of `qsub` jobs that generate connectivity matrices for all the alpraz sessions and for all the atlases. 
 The script uses AFNI's `3dNetCorr` function. For convenience reasons with qsub, the actual call to `3dNetCorr` is in the script `netcor_call.sh`.  
 For replication, you can probably just generate a matrix for one or two subjects using the schaefer400 atlas. For example, you could run the following:  
-``` bash
+``` bash  
 atlas=schaefer400x7_aal_threshold_0.95.nii.gz
 file_out=output_name
 input_file=/cbica/projects/alpraz_EI/data/TASK_GSR/xcpengine/sub-012969/ses-001561/task-emotionid/space-MNI152NLin2009cAsym/task/stats/sub-012969_ses-001561_task-emotionid_space-MNI152NLin2009cAsym_res4d.nii.gz
