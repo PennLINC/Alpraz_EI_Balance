@@ -18,6 +18,7 @@ The scripts are numbered according to the order they should run.
 2. This script launches a ton of `qsub` jobs that generate connectivity matrices for all the alpraz sessions and for all the atlases. 
 The script uses AFNI's `3dNetCorr` function. For convenience reasons with qsub, the actual call to `3dNetCorr` is in the script `netcor_call.sh`.  
 For replication, you can probably just generate a matrix for one or two subjects using the schaefer400 atlas. For example, you could run the following:  
+
 ``` bash  
 atlas=schaefer400x7_aal_threshold_0.95.nii.gz
 file_out=output_name
@@ -67,14 +68,17 @@ Schaefer400 transmodal: `/cbica/projects/alpraz_EI/input/CorMats/schaefer400x7_a
 Schaefer400 unimodal: `/cbica/projects/alpraz_EI/input/CorMats/schaefer400x7_aal_GSR_unimodal25.rds` (all the connections to unimodal regions).  
 
 These can be loaded in `R` with 
+
 ``` R
 df <- readRDS('/cbica/projects/alpraz_EI/input/CorMats/schaefer400x7_aal_GSR_transmodal25.rds')
-```
+```  
+
 for example.  
-If you prefer to use Matlab, you can just open that file in `R` and then save as a csv with 
-``` R
+If you prefer to use Matlab, you can just open that file in `R` and then save as a csv with  
+
+``` R  
 write.table(df,"output_filename.csv", row.names=F,sep=",")
-```
+```  
 
 The dataframe is one row per observation. The columns are as follows:
 The first 2 are: "subid" (subject ID), "sesid" (the session ID, 2 per subject).  
@@ -101,8 +105,9 @@ The critical model to run is:
 `idemoBehAllEmoNrCount` is the number of skipped responses from the `idemo` task. This is a proxy for alertness of the subject.  
 
 This could be run, for example, as: 
+
 ``` R
 model <- gam(Distance ~s(age,k=4)+ oSex+FD+ idemoBehAllEmoNrCount, data = my_data_frame, subset = exclusions==0)  
 summary(model)
-```
+```  
 Again, see the script to get the exclusions.  
